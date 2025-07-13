@@ -8,6 +8,7 @@ nlohmann_json/3.11.3
 assimp/5.4.3
 openal-soft/1.23.1
 libsndfile/1.2.2
+joltphysics/5.2.0
 
 [generators]
 CMakeDeps
