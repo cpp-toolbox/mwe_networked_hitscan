@@ -46,9 +46,11 @@ int main() {
     FPSCamera fps_camera;
 
     Network network(7777);
+    network.logger.disable_all_levels();
     network.initialize_network();
 
     MouseUpdateLogger mouse_update_logger;
+    mouse_update_logger.logger.disable_all_levels();
 
     PacketHandler packet_handler;
 
