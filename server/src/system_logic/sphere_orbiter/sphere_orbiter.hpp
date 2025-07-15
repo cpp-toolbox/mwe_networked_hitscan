@@ -5,13 +5,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 
-class SphereOrbitGenerator {
+class SphereOrbiter {
 public:
   // Constructor with default values for all parameters
-  SphereOrbitGenerator(glm::vec3 center = glm::vec3(0.0f), float radius = 1.0f,
-                       glm::vec3 travel_axis = glm::vec3(0.0f, 1.0f, 0.0f),
-                       float angular_speed_rad_per_sec = glm::radians(90.0f),
-                       float initial_angle = 0.0f)
+  SphereOrbiter(glm::vec3 center = glm::vec3(0.0f), float radius = 1.0f,
+                glm::vec3 travel_axis = glm::vec3(0.0f, 1.0f, 0.0f),
+                float angular_speed_rad_per_sec = glm::radians(90.0f),
+                float initial_angle = 0.0f)
       : center(center), radius(radius),
         angular_speed(angular_speed_rad_per_sec), angle(initial_angle) {
     this->travel_axis = glm::normalize(travel_axis);

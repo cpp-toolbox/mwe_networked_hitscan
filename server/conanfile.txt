@@ -2,6 +2,7 @@
 glm/cci.20230113
 joltphysics/5.2.0
 enet/1.3.18
+fmt/11.2.0
 
 [generators]
 CMakeDeps

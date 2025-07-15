@@ -7,10 +7,10 @@
 #include <stb_image.h>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/Collision/Shape/Shape.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/Shape/Shape.h>
 
 #include "graphics/draw_info/draw_info.hpp"
 #include "graphics/input_graphics_sound_menu/input_graphics_sound_menu.hpp"
@@ -21,22 +21,24 @@
 #include "utility/fixed_frequency_loop/fixed_frequency_loop.hpp"
 #include "utility/jolt_glm_type_conversions/jolt_glm_type_conversions.hpp"
 
-#include "graphics/ui_render_suite_implementation/ui_render_suite_implementation.hpp"
-#include "graphics/input_graphics_sound_menu/input_graphics_sound_menu.hpp"
-#include "graphics/vertex_geometry/vertex_geometry.hpp"
-#include "graphics/shader_standard/shader_standard.hpp"
 #include "graphics/batcher/generated/batcher.hpp"
-#include "graphics/shader_cache/shader_cache.hpp"
-#include "graphics/fps_camera/fps_camera.hpp"
-#include "graphics/window/window.hpp"
 #include "graphics/colors/colors.hpp"
+#include "graphics/fps_camera/fps_camera.hpp"
+#include "graphics/input_graphics_sound_menu/input_graphics_sound_menu.hpp"
+#include "graphics/shader_cache/shader_cache.hpp"
+#include "graphics/shader_standard/shader_standard.hpp"
 #include "graphics/ui/ui.hpp"
+#include "graphics/ui_render_suite_implementation/ui_render_suite_implementation.hpp"
+#include "graphics/vertex_geometry/vertex_geometry.hpp"
+#include "graphics/window/window.hpp"
 
-#include "system_logic/toolbox_engine/toolbox_engine.hpp"
 #include "system_logic/physics/physics.hpp"
+#include "system_logic/toolbox_engine/toolbox_engine.hpp"
+#include "system_logic/sphere_orbiter/sphere_orbiter.hpp"
+#include "system_logic/random_vector/random_vector.hpp"
 
-#include "utility/unique_id_generator/unique_id_generator.hpp"
 #include "utility/logger/logger.hpp"
+#include "utility/unique_id_generator/unique_id_generator.hpp"
 
 #include <iostream>
 
@@ -137,84 +139,6 @@ class Hud3D {
     }
 };
 
-#include <cmath>
-#include <glm/glm.hpp>
-#include <glm/gtx/rotate_vector.hpp>
-
-class SphereOrbitGenerator {
-  public:
-    // Constructor with default values for all parameters
-    SphereOrbitGenerator(glm::vec3 center = glm::vec3(0.0f), float radius = 1.0f,
-                         glm::vec3 travel_axis = glm::vec3(0.0f, 1.0f, 0.0f),
-                         float angular_speed_rad_per_sec = glm::radians(90.0f), float initial_angle = 0.0f)
-        : center(center), radius(radius), angular_speed(angular_speed_rad_per_sec), angle(initial_angle) {
-        this->travel_axis = glm::normalize(travel_axis);
-
-        set_travel_axis(travel_axis);
-    }
-
-    // Advance the orbit and return the new position
-    glm::vec3 process(float dt) {
-        angle += angular_speed * dt;
-        glm::vec3 rotated = glm::rotate(orbit_vector, angle, travel_axis);
-        return center + rotated;
-    }
-
-    void set_travel_axis(const glm::vec3 &travel_axis) {
-        this->travel_axis = travel_axis;
-        // Choose arbitrary initial vector orthogonal to travel_axis
-        glm::vec3 fallback = glm::vec3(0.0f, 1.0f, 0.0f);
-        if (glm::abs(glm::dot(fallback, this->travel_axis)) > 0.99f)
-            fallback = glm::vec3(1.0f, 0.0f, 0.0f);
-
-        orbit_vector = glm::normalize(glm::cross(travel_axis, fallback)) * radius;
-    }
-
-    void set_radius(const float &radius) { this->radius = radius; }
-    void set_angular_speed(const float &angular_speed) { this->angular_speed = angular_speed; }
-
-  private:
-    glm::vec3 center;
-    float radius;
-    glm::vec3 travel_axis;
-    glm::vec3 orbit_vector;
-    float angle;
-    float angular_speed;
-};
-
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp> // for pi
-#include <random>
-#include <cmath>
-
-// Returns a random float in the range [min, max)
-float random_float(float min, float max) {
-    static std::random_device rd;  // seed
-    static std::mt19937 gen(rd()); // mersenne twister engine
-    std::uniform_real_distribution<float> dist(min, max);
-    return dist(gen);
-}
-
-// Generate a random unit vector in 3D
-glm::vec3 random_unit_vector() {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-
-    // Uniform distribution for azimuth angle [0, 2π)
-    std::uniform_real_distribution<float> dist_azimuth(0.0f, 2.0f * glm::pi<float>());
-
-    // Uniform distribution for z = cos(theta), to ensure uniform sphere distribution
-    std::uniform_real_distribution<float> dist_z(-1.0f, 1.0f);
-
-    float z = dist_z(gen);
-    float azimuth = dist_azimuth(gen);
-    float r = std::sqrt(1.0f - z * z);
-    float x = r * std::cos(azimuth);
-    float y = r * std::sin(azimuth);
-
-    return glm::vec3(x, y, z);
-}
-
 int main() {
 
     ToolboxEngine tbx_engine("mwe_networked_hitscan", {ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX,
@@ -224,8 +148,8 @@ int main() {
 
     float room_size = 16.0f;
 
-    SphereOrbitGenerator sog(glm::vec3(0.0f, 1, 0), room_size / 2, glm::vec3(0.0f, 1.0f, 0.0f), glm::radians(90.0f),
-                             0.0f);
+    SphereOrbiter sphere_orbiter(glm::vec3(0.0f, 1, 0), room_size / 2, glm::vec3(0.0f, 1.0f, 0.0f), glm::radians(90.0f),
+                                 0.0f);
 
     tbx_engine.fps_camera.fov.add_observer([&](const float &new_value) {
         tbx_engine.shader_cache.set_uniform(
@@ -296,7 +220,7 @@ int main() {
                                             ShaderUniformVariable::WORLD_TO_CAMERA,
                                             tbx_engine.fps_camera.get_view_matrix());
 
-        auto new_pos = sog.process(dt);
+        auto new_pos = sphere_orbiter.process(dt);
         target.transform.set_translation(new_pos);
         physics_target->SetPosition(g2j(new_pos));
 
@@ -312,9 +236,9 @@ int main() {
             if (hit) {
                 std::cout << "hit target" << std::endl;
                 tbx_engine.sound_system.queue_sound(SoundType::UI_CLICK);
-                sog.set_travel_axis(random_unit_vector());
-                sog.set_radius(random_float(room_size / 4, room_size / 2));
-                sog.set_angular_speed(random_float(glm::radians(45.0f), glm::radians(180.0f)));
+                sphere_orbiter.set_travel_axis(random_unit_vector());
+                sphere_orbiter.set_radius(random_float(room_size / 4, room_size / 2));
+                sphere_orbiter.set_angular_speed(random_float(glm::radians(45.0f), glm::radians(180.0f)));
             }
         }
 
@@ -332,8 +256,10 @@ int main() {
             input_graphics_sound_menu.process_and_queue_render_menu(tbx_engine.window, tbx_engine.input_state,
                                                                     ui_render_suite);
         } else {
-            // tbx_engine::config_x_input_state_x_fps_camera_processing(tbx_engine.fps_camera, tbx_engine.input_state,
-            //                                                          tbx_engine.configuration, dt);
+            // tbx_engine::config_x_input_state_x_fps_camera_processing(tbx_engine.fps_camera,
+            // tbx_engine.input_state,
+            //                                                          tbx_engine.configuration,
+            //                                                          dt);
         }
 
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.upload_ltw_matrices();

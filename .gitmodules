@@ -121,9 +121,6 @@
 [submodule "server/src/networking/server_networking"]
 	path = server/src/networking/server_networking
 	url = git@github.com:cpp-toolbox/server_networking.git
-[submodule "server/src/networking/packets"]
-	path = server/src/networking/packets
-	url = git@github.com:cpp-toolbox/packets.git
 [submodule "server/src/utility/stopwatch"]
 	path = server/src/utility/stopwatch
 	url = git@github.com:cpp-toolbox/stopwatch.git
@@ -271,3 +268,27 @@
 [submodule "single_player/src/system_logic/toolbox_engine"]
 	path = single_player/src/system_logic/toolbox_engine
 	url = git@github.com:cpp-toolbox/toolbox_engine.git
+[submodule "server/src/input/mouse"]
+	path = server/src/input/mouse
+	url = git@github.com:cpp-toolbox/mouse.git
+[submodule "server/src/utility/observable"]
+	path = server/src/utility/observable
+	url = git@github.com:cpp-toolbox/observable.git
+[submodule "client/src/networking/client_networking"]
+	path = client/src/networking/client_networking
+	url = git@github.com:cpp-toolbox/client_networking.git
+[submodule "client/src/networking/packet_data"]
+	path = client/src/networking/packet_data
+	url = git@github.com:cpp-toolbox/packet_data.git
+[submodule "server/src/utility/temporal_binary_switch"]
+	path = server/src/utility/temporal_binary_switch
+	url = git@github.com:cpp-toolbox/temporal_binary_switch.git
+[submodule "server/src/utility/jolt_glm_type_conversions"]
+	path = server/src/utility/jolt_glm_type_conversions
+	url = git@github.com:cpp-toolbox/jolt_glm_type_conversions.git
+[submodule "client/src/networking/packet_handler"]
+	path = client/src/networking/packet_handler
+	url = git@github.com:cpp-toolbox/packet_handler.git
+[submodule "client/src/utility/periodic_signal"]
+	path = client/src/utility/periodic_signal
+	url = git@github.com:cpp-toolbox/periodic_signal.git

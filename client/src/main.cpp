@@ -20,6 +20,9 @@
 
 #include "utility/fixed_frequency_loop/fixed_frequency_loop.hpp"
 #include "utility/jolt_glm_type_conversions/jolt_glm_type_conversions.hpp"
+#include "utility/unique_id_generator/unique_id_generator.hpp"
+#include "utility/periodic_signal/periodic_signal.hpp"
+#include "utility/logger/logger.hpp"
 
 #include "graphics/ui_render_suite_implementation/ui_render_suite_implementation.hpp"
 #include "graphics/input_graphics_sound_menu/input_graphics_sound_menu.hpp"
@@ -35,8 +38,9 @@
 #include "system_logic/toolbox_engine/toolbox_engine.hpp"
 #include "system_logic/physics/physics.hpp"
 
-#include "utility/unique_id_generator/unique_id_generator.hpp"
-#include "utility/logger/logger.hpp"
+#include "networking/client_networking/network.hpp"
+#include "networking/packet_handler/packet_handler.hpp"
+#include "networking/packets/packets.hpp"
 
 #include <iostream>
 
@@ -137,101 +141,92 @@ class Hud3D {
     }
 };
 
-#include <cmath>
-#include <glm/glm.hpp>
-#include <glm/gtx/rotate_vector.hpp>
-
-class SphereOrbitGenerator {
-  public:
-    // Constructor with default values for all parameters
-    SphereOrbitGenerator(glm::vec3 center = glm::vec3(0.0f), float radius = 1.0f,
-                         glm::vec3 travel_axis = glm::vec3(0.0f, 1.0f, 0.0f),
-                         float angular_speed_rad_per_sec = glm::radians(90.0f), float initial_angle = 0.0f)
-        : center(center), radius(radius), angular_speed(angular_speed_rad_per_sec), angle(initial_angle) {
-        this->travel_axis = glm::normalize(travel_axis);
-
-        set_travel_axis(travel_axis);
-    }
-
-    // Advance the orbit and return the new position
-    glm::vec3 process(float dt) {
-        angle += angular_speed * dt;
-        glm::vec3 rotated = glm::rotate(orbit_vector, angle, travel_axis);
-        return center + rotated;
-    }
-
-    void set_travel_axis(const glm::vec3 &travel_axis) {
-        this->travel_axis = travel_axis;
-        // Choose arbitrary initial vector orthogonal to travel_axis
-        glm::vec3 fallback = glm::vec3(0.0f, 1.0f, 0.0f);
-        if (glm::abs(glm::dot(fallback, this->travel_axis)) > 0.99f)
-            fallback = glm::vec3(1.0f, 0.0f, 0.0f);
-
-        orbit_vector = glm::normalize(glm::cross(travel_axis, fallback)) * radius;
-    }
-
-    void set_radius(const float &radius) { this->radius = radius; }
-    void set_angular_speed(const float &angular_speed) { this->angular_speed = angular_speed; }
-
-  private:
-    glm::vec3 center;
-    float radius;
-    glm::vec3 travel_axis;
-    glm::vec3 orbit_vector;
-    float angle;
-    float angular_speed;
-};
-
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp> // for pi
-#include <random>
-#include <cmath>
-
-// Returns a random float in the range [min, max)
-float random_float(float min, float max) {
-    static std::random_device rd;  // seed
-    static std::mt19937 gen(rd()); // mersenne twister engine
-    std::uniform_real_distribution<float> dist(min, max);
-    return dist(gen);
-}
-
-// Generate a random unit vector in 3D
-glm::vec3 random_unit_vector() {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-
-    // Uniform distribution for azimuth angle [0, 2π)
-    std::uniform_real_distribution<float> dist_azimuth(0.0f, 2.0f * glm::pi<float>());
-
-    // Uniform distribution for z = cos(theta), to ensure uniform sphere distribution
-    std::uniform_real_distribution<float> dist_z(-1.0f, 1.0f);
-
-    float z = dist_z(gen);
-    float azimuth = dist_azimuth(gen);
-    float r = std::sqrt(1.0f - z * z);
-    float x = r * std::cos(azimuth);
-    float y = r * std::sin(azimuth);
-
-    return glm::vec3(x, y, z);
-}
-
 int main() {
 
     ToolboxEngine tbx_engine("mwe_networked_hitscan", {ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX,
                                                        ShaderType::ABSOLUTE_POSITION_WITH_COLORED_VERTEX});
 
+    PacketHandler packet_handler;
     Physics physics;
 
-    float room_size = 16.0f;
+    auto physics_target = physics.create_character(0);
 
-    SphereOrbitGenerator sog(glm::vec3(0.0f, 1, 0), room_size / 2, glm::vec3(0.0f, 1.0f, 0.0f), glm::radians(90.0f),
-                             0.0f);
+    draw_info::IVPNColor target = draw_info::IVPNColor(
+        vertex_geometry::generate_cylinder(8, physics.character_height_standing, physics.character_radius),
+        colors::purple);
+
+    Network network("localhost", 7777);
+    network.initialize_network();
+    network.attempt_to_connect_to_server();
+
+    float room_size = 16.0f;
 
     tbx_engine.fps_camera.fov.add_observer([&](const float &new_value) {
         tbx_engine.shader_cache.set_uniform(
             ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX, ShaderUniformVariable::CAMERA_TO_CLIP,
             tbx_engine.fps_camera.get_projection_matrix(tbx_engine.window.width_px, tbx_engine.window.height_px));
     });
+
+    struct LabelledMousePos {
+        unsigned int mouse_pos_update_number;
+        double x_pos;
+        double y_pos;
+    };
+
+    std::vector<LabelledMousePos> mouse_pos_history;
+
+    std::function<void(const void *)> game_update_handler = [&](const void *data) {
+        const GameUpdatePacket *packet = reinterpret_cast<const GameUpdatePacket *>(data);
+        GameUpdate just_received_game_update = packet->game_update;
+
+        std::cout << "just received pitch: " << just_received_game_update.pitch
+                  << " and yaw: " << just_received_game_update.yaw << std::endl;
+
+        auto predicted_yaw = tbx_engine.fps_camera.transform.get_rotation_yaw();
+        auto predicted_pitch = tbx_engine.fps_camera.transform.get_rotation_pitch();
+
+        tbx_engine.fps_camera.transform.set_rotation_pitch(just_received_game_update.pitch);
+        tbx_engine.fps_camera.transform.set_rotation_yaw(just_received_game_update.yaw);
+
+        glm::vec3 new_target_pos(just_received_game_update.target_x_pos, just_received_game_update.target_y_pos,
+                                 just_received_game_update.target_z_pos);
+
+        physics_target->SetPosition(g2j(new_target_pos));
+        target.transform.set_translation(new_target_pos);
+
+        // NOTE: we don't ever need to use updates that came before
+        std::erase_if(mouse_pos_history, [&](const auto &lmp) {
+            return lmp.mouse_pos_update_number < just_received_game_update.last_processed_mouse_pos_update_number;
+        });
+
+        for (const auto &lmp : mouse_pos_history) {
+            if (lmp.mouse_pos_update_number == just_received_game_update.last_processed_mouse_pos_update_number) {
+                tbx_engine.fps_camera.mouse.last_mouse_position_x = lmp.x_pos;
+                tbx_engine.fps_camera.mouse.last_mouse_position_y = lmp.y_pos;
+            } else if (lmp.mouse_pos_update_number > just_received_game_update.last_processed_mouse_pos_update_number) {
+                tbx_engine.fps_camera.mouse_callback(lmp.x_pos, lmp.y_pos);
+            }
+        }
+
+        auto reconciled_yaw = tbx_engine.fps_camera.transform.get_rotation_yaw();
+        auto reconciled_pitch = tbx_engine.fps_camera.transform.get_rotation_pitch();
+
+        std::cout << "cpsr deltas: yaw " << reconciled_yaw - predicted_yaw
+                  << " pitch: " << reconciled_pitch - predicted_pitch << std::endl;
+    };
+
+    packet_handler.register_handler(PacketType::GAME_UPDATE, game_update_handler);
+
+    unsigned int mouse_pos_update_number = 0;
+    std::function<void(double, double)> mouse_pos_callback = [&](double xpos, double ypos) {
+        tbx_engine.fps_camera.mouse_callback(xpos, ypos);
+        tbx_engine.input_state.glfw_cursor_pos_callback(xpos, ypos);
+        LabelledMousePos lmp(mouse_pos_update_number, xpos, ypos);
+        mouse_pos_history.push_back(lmp);
+        ++mouse_pos_update_number;
+    };
+
+    tbx_engine.glfw_lambda_callback_manager.set_cursor_pos_callback(mouse_pos_callback);
 
     tbx_engine::register_input_graphics_sound_config_handlers(tbx_engine.configuration, tbx_engine.fps_camera,
                                                               tbx_engine.main_loop);
@@ -244,6 +239,8 @@ int main() {
 
     GLFWLambdaCallbackManager glcm = tbx_engine::create_default_glcm_for_input_and_camera(
         tbx_engine.input_state, tbx_engine.fps_camera, tbx_engine.window, tbx_engine.shader_cache);
+
+    PeriodicSignal send_mouse_updates_signal(60);
 
     // room [[
 
@@ -265,12 +262,6 @@ int main() {
 
     // room ]]
 
-    auto physics_target = physics.create_character(0);
-
-    draw_info::IVPNColor target = draw_info::IVPNColor(
-        vertex_geometry::generate_cylinder(8, physics.character_height_standing, physics.character_radius),
-        colors::purple);
-
     // tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.tag_id(torus);
     tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.tag_id(room);
     tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.tag_id(target);
@@ -285,8 +276,26 @@ int main() {
 
     ConsoleLogger tick_logger;
     tick_logger.disable_all_levels();
+
     std::function<void(double)> tick = [&](double dt) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        if (send_mouse_updates_signal.process_and_get_signal()) {
+            MouseUpdate mu(mouse_pos_update_number, tbx_engine.input_state.mouse_position_x,
+                           tbx_engine.input_state.mouse_position_y,
+                           tbx_engine.input_state.is_pressed(EKey::LEFT_MOUSE_BUTTON),
+                           tbx_engine.fps_camera.active_sensitivity);
+            MouseUpdatePacket mup;
+            mup.header.type = PacketType::MOUSE_UPDATE;
+            mup.header.size_of_data_without_header = sizeof(MouseUpdate);
+            mup.mouse_update = mu;
+            network.send_packet(&mup, sizeof(MouseUpdatePacket));
+        }
+
+        std::vector<PacketWithSize> pws = network.get_network_events_received_since_last_tick();
+        packet_handler.handle_packets(pws);
+
+        // target.transform.set_translation();
 
         tbx_engine.shader_cache.set_uniform(
             ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX, ShaderUniformVariable::CAMERA_TO_CLIP,
@@ -295,30 +304,6 @@ int main() {
         tbx_engine.shader_cache.set_uniform(ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX,
                                             ShaderUniformVariable::WORLD_TO_CAMERA,
                                             tbx_engine.fps_camera.get_view_matrix());
-
-        auto new_pos = sog.process(dt);
-        target.transform.set_translation(new_pos);
-        physics_target->SetPosition(g2j(new_pos));
-
-        // hitscan logic [[
-
-        if (tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON)) {
-            JPH::RayCastResult rcr;
-            JPH::RayCast aim_ray;
-            aim_ray.mOrigin = JPH::Vec3(0, 0, 0);
-            aim_ray.mDirection = g2j(tbx_engine.fps_camera.transform.compute_forward_vector()) * 100;
-            aim_ray.mOrigin -= physics_target->GetPosition();
-            bool hit = physics_target->GetShape()->CastRay(aim_ray, JPH::SubShapeIDCreator(), rcr);
-            if (hit) {
-                std::cout << "hit target" << std::endl;
-                tbx_engine.sound_system.queue_sound(SoundType::UI_CLICK);
-                sog.set_travel_axis(random_unit_vector());
-                sog.set_radius(random_float(room_size / 4, room_size / 2));
-                sog.set_angular_speed(random_float(glm::radians(45.0f), glm::radians(180.0f)));
-            }
-        }
-
-        // hitscan logic ]]
 
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.queue_draw(room);
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.queue_draw(target);
