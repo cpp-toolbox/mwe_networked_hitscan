@@ -37,6 +37,7 @@
 
 #include "system_logic/toolbox_engine/toolbox_engine.hpp"
 #include "system_logic/physics/physics.hpp"
+#include "system_logic/mouse_update_logger/mouse_update_logger.hpp"
 
 #include "networking/client_networking/network.hpp"
 #include "networking/packet_handler/packet_handler.hpp"
@@ -149,13 +150,16 @@ int main() {
     PacketHandler packet_handler;
     Physics physics;
 
+    MouseUpdateLogger mouse_update_logger;
+
     auto physics_target = physics.create_character(0);
 
     draw_info::IVPNColor target = draw_info::IVPNColor(
         vertex_geometry::generate_cylinder(8, physics.character_height_standing, physics.character_radius),
         colors::purple);
 
-    Network network("localhost", 7777);
+    // Network network("localhost", 7777);
+    Network network("104.131.10.102", 7777);
     network.initialize_network();
     network.attempt_to_connect_to_server();
 
@@ -180,7 +184,8 @@ int main() {
         GameUpdate just_received_game_update = packet->game_update;
 
         std::cout << "just received pitch: " << just_received_game_update.pitch
-                  << " and yaw: " << just_received_game_update.yaw << std::endl;
+                  << " and yaw: " << just_received_game_update.yaw
+                  << " lpmu: " << just_received_game_update.last_processed_mouse_pos_update_number << std::endl;
 
         auto predicted_yaw = tbx_engine.fps_camera.transform.get_rotation_yaw();
         auto predicted_pitch = tbx_engine.fps_camera.transform.get_rotation_pitch();
@@ -199,12 +204,18 @@ int main() {
             return lmp.mouse_pos_update_number < just_received_game_update.last_processed_mouse_pos_update_number;
         });
 
+        std::cout << "starting reconciliation" << std::endl;
+
         for (const auto &lmp : mouse_pos_history) {
             if (lmp.mouse_pos_update_number == just_received_game_update.last_processed_mouse_pos_update_number) {
+                std::cout << "set mouse position to: " << lmp.x_pos << ", " << lmp.y_pos << std::endl;
                 tbx_engine.fps_camera.mouse.last_mouse_position_x = lmp.x_pos;
                 tbx_engine.fps_camera.mouse.last_mouse_position_y = lmp.y_pos;
             } else if (lmp.mouse_pos_update_number > just_received_game_update.last_processed_mouse_pos_update_number) {
+                std::cout << "reapplying mouse position:" << lmp.x_pos << ", " << lmp.y_pos << std::endl;
                 tbx_engine.fps_camera.mouse_callback(lmp.x_pos, lmp.y_pos);
+                std::cout << "new yaw " << tbx_engine.fps_camera.transform.get_rotation_yaw() << " pitch "
+                          << tbx_engine.fps_camera.transform.get_rotation_pitch() << std::endl;
             }
         }
 
@@ -220,10 +231,11 @@ int main() {
     unsigned int mouse_pos_update_number = 0;
     std::function<void(double, double)> mouse_pos_callback = [&](double xpos, double ypos) {
         tbx_engine.fps_camera.mouse_callback(xpos, ypos);
+        mouse_update_logger.log(xpos, ypos, mouse_pos_update_number, tbx_engine.fps_camera);
         tbx_engine.input_state.glfw_cursor_pos_callback(xpos, ypos);
         LabelledMousePos lmp(mouse_pos_update_number, xpos, ypos);
         mouse_pos_history.push_back(lmp);
-        ++mouse_pos_update_number;
+        mouse_pos_update_number += 1;
     };
 
     tbx_engine.glfw_lambda_callback_manager.set_cursor_pos_callback(mouse_pos_callback);
@@ -236,9 +248,6 @@ int main() {
               ui_render_suite, tbx_engine.window);
     InputGraphicsSoundMenu input_graphics_sound_menu(tbx_engine.window, tbx_engine.input_state, tbx_engine.batcher,
                                                      tbx_engine.sound_system, tbx_engine.configuration);
-
-    GLFWLambdaCallbackManager glcm = tbx_engine::create_default_glcm_for_input_and_camera(
-        tbx_engine.input_state, tbx_engine.fps_camera, tbx_engine.window, tbx_engine.shader_cache);
 
     PeriodicSignal send_mouse_updates_signal(60);
 
@@ -281,15 +290,22 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (send_mouse_updates_signal.process_and_get_signal()) {
-            MouseUpdate mu(mouse_pos_update_number, tbx_engine.input_state.mouse_position_x,
-                           tbx_engine.input_state.mouse_position_y,
-                           tbx_engine.input_state.is_pressed(EKey::LEFT_MOUSE_BUTTON),
-                           tbx_engine.fps_camera.active_sensitivity);
-            MouseUpdatePacket mup;
-            mup.header.type = PacketType::MOUSE_UPDATE;
-            mup.header.size_of_data_without_header = sizeof(MouseUpdate);
-            mup.mouse_update = mu;
-            network.send_packet(&mup, sizeof(MouseUpdatePacket));
+
+            if (not mouse_pos_history.empty()) {
+
+                auto last_mouse_pos = mouse_pos_history.back();
+
+                std::cout << "sending out mouse pos [" << last_mouse_pos.mouse_pos_update_number << "] "
+                          << last_mouse_pos.x_pos << ", " << last_mouse_pos.y_pos << std::endl;
+                MouseUpdate mu(last_mouse_pos.mouse_pos_update_number, last_mouse_pos.x_pos, last_mouse_pos.y_pos,
+                               tbx_engine.input_state.is_pressed(EKey::LEFT_MOUSE_BUTTON),
+                               tbx_engine.fps_camera.active_sensitivity);
+                MouseUpdatePacket mup;
+                mup.header.type = PacketType::MOUSE_UPDATE;
+                mup.header.size_of_data_without_header = sizeof(MouseUpdate);
+                mup.mouse_update = mu;
+                network.send_packet(&mup, sizeof(MouseUpdatePacket));
+            }
         }
 
         std::vector<PacketWithSize> pws = network.get_network_events_received_since_last_tick();

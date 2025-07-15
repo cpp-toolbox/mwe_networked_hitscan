@@ -22,6 +22,7 @@
 #include "system_logic/physics/physics.hpp"
 #include "system_logic/random_vector/random_vector.hpp"
 #include "system_logic/sphere_orbiter/sphere_orbiter.hpp"
+#include "system_logic/mouse_update_logger/mouse_update_logger.hpp"
 
 int main() {
 
@@ -47,6 +48,8 @@ int main() {
     Network network(7777);
     network.initialize_network();
 
+    MouseUpdateLogger mouse_update_logger;
+
     PacketHandler packet_handler;
 
     TemporalBinarySwitch fire_tbs;
@@ -56,7 +59,6 @@ int main() {
     std::function<void(const void *)> mouse_update_handler = [&](const void *data) {
         const MouseUpdatePacket *packet = reinterpret_cast<const MouseUpdatePacket *>(data);
         MouseUpdate just_received_mouse_update = packet->mouse_update;
-        std::cout << "got mouse update" << std::endl;
         mouse_updates_since_last_tick.push_back(just_received_mouse_update);
     };
 
@@ -68,9 +70,8 @@ int main() {
 
         for (const MouseUpdate &mu : mouse_updates_since_last_tick) {
 
-            std::cout << "received: " << mu << std::endl;
-
             fps_camera.mouse_callback(mu.x_pos, mu.y_pos, mu.sensitivity);
+            mouse_update_logger.log(mu.x_pos, mu.y_pos, mu.mouse_pos_update_number, fps_camera);
 
             if (mu.fire_pressed) {
                 fire_tbs.set_true();

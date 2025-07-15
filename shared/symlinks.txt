@@ -9,3 +9,6 @@ packets -> ../client/src/networking/packets/
 
 packet_types -> ../server/src/networking/packet_types/
 packet_types -> ../client/src/networking/packet_types/
+
+mouse_update_logger -> ../server/src/system_logic/mouse_update_logger
+mouse_update_logger -> ../client/src/system_logic/mouse_update_logger
