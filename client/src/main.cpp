@@ -38,6 +38,7 @@
 #include "system_logic/toolbox_engine/toolbox_engine.hpp"
 #include "system_logic/physics/physics.hpp"
 #include "system_logic/mouse_update_logger/mouse_update_logger.hpp"
+#include "system_logic/hitscan_logic/hitscan_logic.hpp"
 
 #include "networking/client_networking/network.hpp"
 #include "networking/packet_handler/packet_handler.hpp"
@@ -144,8 +145,21 @@ class Hud3D {
 
 int main() {
 
-    ToolboxEngine tbx_engine("mwe_networked_hitscan", {ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX,
-                                                       ShaderType::ABSOLUTE_POSITION_WITH_COLORED_VERTEX});
+    // temporary badness
+    std::unordered_map<SoundType, std::string> sound_type_to_file = {
+        {SoundType::CLIENT_HIT, "assets/sounds/client_hit.wav"},
+        {SoundType::CLIENT_MISS, "assets/sounds/client_miss.wav"},
+        {SoundType::SERVER_HIT, "assets/sounds/server_hit.wav"},
+        {SoundType::SERVER_MISS, "assets/sounds/server_miss.wav"},
+        {SoundType::UI_HOVER, "assets/sounds/hover.wav"},
+        {SoundType::UI_CLICK, "assets/sounds/click.wav"},
+        {SoundType::UI_SUCCESS, "assets/sounds/success.wav"},
+    };
+
+    ToolboxEngine tbx_engine("mwe_networked_hitscan",
+                             {ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX,
+                              ShaderType::ABSOLUTE_POSITION_WITH_COLORED_VERTEX},
+                             sound_type_to_file);
 
     PacketHandler packet_handler;
     Physics physics;
@@ -227,6 +241,14 @@ int main() {
     };
 
     packet_handler.register_handler(PacketType::GAME_UPDATE, game_update_handler);
+
+    std::function<void(const void *)> sound_update_handler = [&](const void *data) {
+        const SoundUpdatePacket *packet = reinterpret_cast<const SoundUpdatePacket *>(data);
+        SoundUpdate just_received_sound_update = packet->sound_update;
+        tbx_engine.sound_system.queue_sound(just_received_sound_update.sound_to_play);
+    };
+
+    packet_handler.register_handler(PacketType::SOUND_UPDATE, sound_update_handler);
 
     unsigned int mouse_pos_update_number = 0;
     std::function<void(double, double)> mouse_pos_callback = [&](double xpos, double ypos) {
@@ -336,6 +358,15 @@ int main() {
         } else {
             // tbx_engine::config_x_input_state_x_fps_camera_processing(tbx_engine.fps_camera, tbx_engine.input_state,
             //                                                          tbx_engine.configuration, dt);
+        }
+
+        if (tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON)) {
+            bool had_hit = run_hitscan_logic(tbx_engine.fps_camera, physics_target);
+            if (had_hit) {
+                tbx_engine.sound_system.queue_sound(SoundType::CLIENT_HIT);
+            } else {
+                tbx_engine.sound_system.queue_sound(SoundType::CLIENT_MISS);
+            }
         }
 
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.upload_ltw_matrices();

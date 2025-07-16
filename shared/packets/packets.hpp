@@ -1,6 +1,7 @@
 #ifndef PACKETS_HPP
 #define PACKETS_HPP
 
+#include "../../sound/sound_types/sound_types.hpp"
 #include "../packet_data/packet_data.hpp"
 
 #include <iostream>
@@ -44,6 +45,13 @@ struct GameUpdate {
   }
 };
 
+struct SoundUpdate {
+  SoundType sound_to_play;
+  double x;
+  double y;
+  double z;
+};
+
 struct MouseUpdatePacket {
   PacketHeader header;
   MouseUpdate mouse_update;
@@ -52,6 +60,11 @@ struct MouseUpdatePacket {
 struct GameUpdatePacket {
   PacketHeader header;
   GameUpdate game_update;
+};
+
+struct SoundUpdatePacket {
+  PacketHeader header;
+  SoundUpdate sound_update;
 };
 
 #endif // PACKETS_HPP

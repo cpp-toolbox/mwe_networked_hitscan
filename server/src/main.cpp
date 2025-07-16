@@ -15,6 +15,8 @@
 
 #include "graphics/fps_camera/fps_camera.hpp"
 
+#include "sound/sound_types/sound_types.hpp"
+
 #include "utility/fixed_frequency_loop/fixed_frequency_loop.hpp"
 #include "utility/temporal_binary_switch/temporal_binary_switch.hpp"
 #include "utility/jolt_glm_type_conversions/jolt_glm_type_conversions.hpp"
@@ -23,6 +25,7 @@
 #include "system_logic/random_vector/random_vector.hpp"
 #include "system_logic/sphere_orbiter/sphere_orbiter.hpp"
 #include "system_logic/mouse_update_logger/mouse_update_logger.hpp"
+#include "system_logic/hitscan_logic/hitscan_logic.hpp"
 
 int main() {
 
@@ -56,6 +59,7 @@ int main() {
 
     TemporalBinarySwitch fire_tbs;
 
+    std::vector<SoundUpdate> sound_updates_this_tick;
     std::vector<MouseUpdate> mouse_updates_since_last_tick;
 
     std::function<void(const void *)> mouse_update_handler = [&](const void *data) {
@@ -84,24 +88,20 @@ int main() {
             auto new_pos = sphere_orbiter.process(dt);
             physics_target->SetPosition(g2j(new_pos));
 
-            // hitscan logic [[
-
             if (fire_tbs.just_switched_on()) {
-                JPH::RayCastResult rcr;
-                JPH::RayCast aim_ray;
-                aim_ray.mOrigin = JPH::Vec3(0, 0, 0);
-                aim_ray.mDirection = g2j(fps_camera.transform.compute_forward_vector()) * 100;
-                aim_ray.mOrigin -= physics_target->GetPosition();
-                bool hit = physics_target->GetShape()->CastRay(aim_ray, JPH::SubShapeIDCreator(), rcr);
-                if (hit) {
+                bool had_hit = run_hitscan_logic(fps_camera, physics_target);
+                if (had_hit) {
                     std::cout << "hit target" << std::endl;
                     sphere_orbiter.set_travel_axis(random_unit_vector());
                     sphere_orbiter.set_radius(random_float(room_size / 4, room_size / 2));
                     sphere_orbiter.set_angular_speed(random_float(glm::radians(45.0f), glm::radians(180.0f)));
+                    SoundUpdate sound_update(SoundType::SERVER_HIT, 0, 0, 0);
+                    sound_updates_this_tick.push_back(sound_update);
+                } else {
+                    SoundUpdate sound_update(SoundType::SERVER_MISS, 0, 0, 0);
+                    sound_updates_this_tick.push_back(sound_update);
                 }
             }
-
-            // hitscan logic ]]
 
             last_processed_mouse_pos_update_number = mu.mouse_pos_update_number;
         }
@@ -120,6 +120,18 @@ int main() {
         if (network.get_connected_client_ids().size() == 1) {
             network.unreliable_send(network.get_connected_client_ids().at(0), &gup, sizeof(GameUpdatePacket));
         }
+
+        for (const auto &su : sound_updates_this_tick) {
+            SoundUpdatePacket sup;
+            sup.header.type = PacketType::SOUND_UPDATE;
+            sup.header.size_of_data_without_header = sizeof(SoundUpdate);
+            sup.sound_update = su;
+
+            if (network.get_connected_client_ids().size() == 1) {
+                network.unreliable_send(network.get_connected_client_ids().at(0), &sup, sizeof(SoundUpdatePacket));
+            }
+        }
+        sound_updates_this_tick.clear();
     };
     std::function<bool()> term = [&]() { return not running; };
 

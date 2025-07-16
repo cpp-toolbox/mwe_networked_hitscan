@@ -12,3 +12,9 @@ packet_types -> ../client/src/networking/packet_types/
 
 mouse_update_logger -> ../server/src/system_logic/mouse_update_logger
 mouse_update_logger -> ../client/src/system_logic/mouse_update_logger
+
+sound_types -> ../server/src/sound/sound_types
+sound_types -> ../client/src/sound/sound_types
+
+hitscan_logic -> ../server/src/system_logic/hitscan_logic
+hitscan_logic -> ../client/src/system_logic/hitscan_logic
