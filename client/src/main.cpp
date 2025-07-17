@@ -193,11 +193,14 @@ int main() {
         double y_pos;
     };
 
+    unsigned int last_received_game_update_number = 0;
     std::vector<LabelledMousePos> mouse_pos_history;
 
     std::function<void(const void *)> game_update_handler = [&](const void *data) {
         const GameUpdatePacket *packet = reinterpret_cast<const GameUpdatePacket *>(data);
         GameUpdate just_received_game_update = packet->game_update;
+
+        last_received_game_update_number = just_received_game_update.update_number;
 
         mouse_update_logger.log_game_update(just_received_game_update);
 
@@ -251,6 +254,7 @@ int main() {
     packet_handler.register_handler(PacketType::SOUND_UPDATE, sound_update_handler);
 
     unsigned int mouse_pos_update_number = 0;
+
     std::function<void(double, double)> mouse_pos_callback = [&](double xpos, double ypos) {
         tbx_engine.fps_camera.mouse_callback(xpos, ypos);
         mouse_update_logger.log(xpos, ypos, mouse_pos_update_number, tbx_engine.fps_camera);
@@ -308,6 +312,8 @@ int main() {
     ConsoleLogger tick_logger;
     tick_logger.disable_all_levels();
 
+    bool fire_pressed_since_last_send = false;
+
     std::function<void(double)> tick = [&](double dt) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -320,14 +326,17 @@ int main() {
                 mouse_update_logger.logger.debug("sending out mouse pos [{}]: ({}, {})",
                                                  last_mouse_pos.mouse_pos_update_number, last_mouse_pos.x_pos,
                                                  last_mouse_pos.y_pos);
-                MouseUpdate mu(last_mouse_pos.mouse_pos_update_number, last_mouse_pos.x_pos, last_mouse_pos.y_pos,
-                               tbx_engine.input_state.is_pressed(EKey::LEFT_MOUSE_BUTTON),
+                MouseUpdate mu(last_mouse_pos.mouse_pos_update_number, last_received_game_update_number,
+                               last_mouse_pos.x_pos, last_mouse_pos.y_pos,
+                               fire_pressed_since_last_send, // NOTE: we use this instead of sampling the keyboard now.
                                tbx_engine.fps_camera.active_sensitivity);
                 MouseUpdatePacket mup;
                 mup.header.type = PacketType::MOUSE_UPDATE;
                 mup.header.size_of_data_without_header = sizeof(MouseUpdate);
                 mup.mouse_update = mu;
                 network.send_packet(&mup, sizeof(MouseUpdatePacket));
+
+                fire_pressed_since_last_send = false;
             }
         }
 
@@ -360,11 +369,24 @@ int main() {
             //                                                          tbx_engine.configuration, dt);
         }
 
+        fire_pressed_since_last_send =
+            fire_pressed_since_last_send or tbx_engine.input_state.is_pressed(EKey::LEFT_MOUSE_BUTTON);
+
+        std::cout << "mouse update: " << mouse_pos_update_number << " fpsls: " << fire_pressed_since_last_send
+                  << std::endl;
+
         if (tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON)) {
             bool had_hit = run_hitscan_logic(tbx_engine.fps_camera, physics_target);
+            auto hit_position = physics_target->GetPosition();
             if (had_hit) {
+                std::cout << "hit target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
+                          << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << std::endl;
                 tbx_engine.sound_system.queue_sound(SoundType::CLIENT_HIT);
             } else {
+
+                std::cout << "missed target lagun: " << last_received_game_update_number
+                          << " at: " << hit_position.GetX() << " , " << hit_position.GetY() << ", "
+                          << hit_position.GetZ() << std::endl;
                 tbx_engine.sound_system.queue_sound(SoundType::CLIENT_MISS);
             }
         }

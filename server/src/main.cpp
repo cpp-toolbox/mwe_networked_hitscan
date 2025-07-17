@@ -6,6 +6,7 @@
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/StateRecorderImpl.h>
 
 #include <glm/fwd.hpp>
 
@@ -70,14 +71,30 @@ int main() {
 
     packet_handler.register_handler(PacketType::MOUSE_UPDATE, mouse_update_handler);
 
+    unsigned int update_number = 0;
+    std::unordered_map<unsigned int, JPH::StateRecorderImpl> update_number_to_physics_state;
+
     std::function<void(double)> tick = [&](double dt) {
         std::vector<PacketWithSize> pws = network.get_network_events_since_last_tick();
         packet_handler.handle_packets(pws);
+
+        auto new_pos = sphere_orbiter.process(dt);
+        physics_target->SetPosition(g2j(new_pos));
+
+        // NOTE: this probably shouldn't be here in regular logic, only happening here
+        // because we know that the position only changes when a new update comes in which
+        JPH::StateRecorderImpl physics_target_physics_state;
+        physics_target->SaveState(physics_target_physics_state);
+
+        update_number_to_physics_state.emplace(update_number, std::move(physics_target_physics_state));
 
         for (const MouseUpdate &mu : mouse_updates_since_last_tick) {
 
             fps_camera.mouse_callback(mu.x_pos, mu.y_pos, mu.sensitivity);
             mouse_update_logger.log(mu.x_pos, mu.y_pos, mu.mouse_pos_update_number, fps_camera);
+
+            std::cout << "mouse update: " << mu.mouse_pos_update_number << " fire pressed: " << mu.fire_pressed
+                      << std::endl;
 
             if (mu.fire_pressed) {
                 fire_tbs.set_true();
@@ -85,13 +102,23 @@ int main() {
                 fire_tbs.set_false();
             }
 
-            auto new_pos = sphere_orbiter.process(dt);
-            physics_target->SetPosition(g2j(new_pos));
-
             if (fire_tbs.just_switched_on()) {
+                std::cout << "firing" << std::endl;
+
+                JPH::StateRecorderImpl current_physics_state;
+                physics_target->SaveState(current_physics_state);
+
+                JPH::StateRecorderImpl &physics_state_when_fire_occurred =
+                    update_number_to_physics_state.at(mu.last_applied_game_update_number);
+
+                physics_target->RestoreState(physics_state_when_fire_occurred);
+
                 bool had_hit = run_hitscan_logic(fps_camera, physics_target);
+                auto hit_position = physics_target->GetPosition();
                 if (had_hit) {
-                    std::cout << "hit target" << std::endl;
+                    std::cout << "hit target lagun: " << mu.last_applied_game_update_number
+                              << " at: " << hit_position.GetX() << " , " << hit_position.GetY() << ", "
+                              << hit_position.GetZ() << std::endl;
                     sphere_orbiter.set_travel_axis(random_unit_vector());
                     sphere_orbiter.set_radius(random_float(room_size / 4, room_size / 2));
                     sphere_orbiter.set_angular_speed(random_float(glm::radians(45.0f), glm::radians(180.0f)));
@@ -101,6 +128,10 @@ int main() {
                     SoundUpdate sound_update(SoundType::SERVER_MISS, 0, 0, 0);
                     sound_updates_this_tick.push_back(sound_update);
                 }
+
+                physics_target->RestoreState(current_physics_state);
+            } else {
+                std::cout << "not firing" << std::endl;
             }
 
             last_processed_mouse_pos_update_number = mu.mouse_pos_update_number;
@@ -109,7 +140,7 @@ int main() {
 
         auto target_pos = physics_target->GetPosition();
 
-        GameUpdate gu(last_processed_mouse_pos_update_number, fps_camera.transform.get_rotation().y,
+        GameUpdate gu(last_processed_mouse_pos_update_number, update_number, fps_camera.transform.get_rotation().y,
                       fps_camera.transform.get_rotation().x, target_pos.GetX(), target_pos.GetY(), target_pos.GetZ());
 
         GameUpdatePacket gup;
@@ -120,6 +151,8 @@ int main() {
         if (network.get_connected_client_ids().size() == 1) {
             network.unreliable_send(network.get_connected_client_ids().at(0), &gup, sizeof(GameUpdatePacket));
         }
+
+        update_number += 1;
 
         for (const auto &su : sound_updates_this_tick) {
             SoundUpdatePacket sup;

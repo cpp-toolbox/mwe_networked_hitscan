@@ -8,6 +8,7 @@
 
 struct MouseUpdate {
   unsigned int mouse_pos_update_number;
+  unsigned int last_applied_game_update_number;
   double x_pos;
   double y_pos;
   bool fire_pressed;
@@ -26,6 +27,7 @@ struct MouseUpdate {
 
 struct GameUpdate {
   unsigned int last_processed_mouse_pos_update_number;
+  unsigned int update_number;
   double yaw;
   double pitch;
   double target_x_pos;
@@ -35,7 +37,7 @@ struct GameUpdate {
   friend std::ostream &operator<<(std::ostream &os, const GameUpdate &gu) {
     os << "GameUpdate { "
        << "last_update_number: " << gu.last_processed_mouse_pos_update_number
-       << ", "
+       << "update_number: " << gu.update_number << ", "
        << "yaw: " << gu.yaw << ", "
        << "pitch: " << gu.pitch << ", "
        << "target_x: " << gu.target_x_pos << ", "
