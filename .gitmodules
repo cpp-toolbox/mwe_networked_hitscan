@@ -292,3 +292,6 @@
 [submodule "client/src/utility/periodic_signal"]
 	path = client/src/utility/periodic_signal
 	url = git@github.com:cpp-toolbox/periodic_signal.git
+[submodule "client/src/utility/temporal_binary_switch"]
+	path = client/src/utility/temporal_binary_switch
+	url = git@github.com:cpp-toolbox/temporal_binary_switch.git

@@ -23,6 +23,7 @@
 #include "utility/unique_id_generator/unique_id_generator.hpp"
 #include "utility/periodic_signal/periodic_signal.hpp"
 #include "utility/logger/logger.hpp"
+#include "utility/temporal_binary_switch/temporal_binary_switch.hpp"
 
 #include "graphics/ui_render_suite_implementation/ui_render_suite_implementation.hpp"
 #include "graphics/input_graphics_sound_menu/input_graphics_sound_menu.hpp"
@@ -142,6 +143,24 @@ class Hud3D {
                                     input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON));
     }
 };
+
+void firing_logic(bool fire_just_pressed, ToolboxEngine &tbx_engine, JPH::Ref<JPH::CharacterVirtual> physics_target,
+                  unsigned int last_received_game_update_number) {
+    if (fire_just_pressed) {
+        bool had_hit = run_hitscan_logic(tbx_engine.fps_camera, physics_target);
+        auto hit_position = physics_target->GetPosition();
+        if (had_hit) {
+            std::cout << "hit target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
+                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << std::endl;
+            tbx_engine.sound_system.queue_sound(SoundType::CLIENT_HIT);
+        } else {
+
+            std::cout << "missed target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
+                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << std::endl;
+            tbx_engine.sound_system.queue_sound(SoundType::CLIENT_MISS);
+        }
+    }
+}
 
 int main() {
 
@@ -312,12 +331,22 @@ int main() {
     ConsoleLogger tick_logger;
     tick_logger.disable_all_levels();
 
+    TemporalBinarySignal fire_pressed_per_send_tbs;
     bool fire_pressed_since_last_send = false;
 
     std::function<void(double)> tick = [&](double dt) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (send_mouse_updates_signal.process_and_get_signal()) {
+
+            if (fire_pressed_since_last_send) {
+                fire_pressed_per_send_tbs.set_on();
+            } else {
+                fire_pressed_per_send_tbs.set_off();
+            }
+
+            firing_logic(fire_pressed_per_send_tbs.is_just_on(), tbx_engine, physics_target,
+                         last_received_game_update_number);
 
             if (not mouse_pos_history.empty()) {
 
@@ -374,22 +403,6 @@ int main() {
 
         std::cout << "mouse update: " << mouse_pos_update_number << " fpsls: " << fire_pressed_since_last_send
                   << std::endl;
-
-        if (tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON)) {
-            bool had_hit = run_hitscan_logic(tbx_engine.fps_camera, physics_target);
-            auto hit_position = physics_target->GetPosition();
-            if (had_hit) {
-                std::cout << "hit target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
-                          << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << std::endl;
-                tbx_engine.sound_system.queue_sound(SoundType::CLIENT_HIT);
-            } else {
-
-                std::cout << "missed target lagun: " << last_received_game_update_number
-                          << " at: " << hit_position.GetX() << " , " << hit_position.GetY() << ", "
-                          << hit_position.GetZ() << std::endl;
-                tbx_engine.sound_system.queue_sound(SoundType::CLIENT_MISS);
-            }
-        }
 
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.upload_ltw_matrices();
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.draw_everything();
