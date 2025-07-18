@@ -118,13 +118,18 @@ int main() {
                 if (had_hit) {
                     std::cout << "hit target lagun: " << mu.last_applied_game_update_number
                               << " at: " << hit_position.GetX() << " , " << hit_position.GetY() << ", "
-                              << hit_position.GetZ() << std::endl;
+                              << hit_position.GetZ() << " with yaw, pitch " << fps_camera.transform.get_rotation_yaw()
+                              << ", " << fps_camera.transform.get_rotation_pitch() << std::endl;
                     sphere_orbiter.set_travel_axis(random_unit_vector());
                     sphere_orbiter.set_radius(random_float(room_size / 4, room_size / 2));
                     sphere_orbiter.set_angular_speed(random_float(glm::radians(45.0f), glm::radians(180.0f)));
                     SoundUpdate sound_update(SoundType::SERVER_HIT, 0, 0, 0);
                     sound_updates_this_tick.push_back(sound_update);
                 } else {
+                    std::cout << "missed target lagun: " << mu.last_applied_game_update_number
+                              << " at: " << hit_position.GetX() << " , " << hit_position.GetY() << ", "
+                              << hit_position.GetZ() << " with yaw, pitch " << fps_camera.transform.get_rotation_yaw()
+                              << ", " << fps_camera.transform.get_rotation_pitch() << std::endl;
                     SoundUpdate sound_update(SoundType::SERVER_MISS, 0, 0, 0);
                     sound_updates_this_tick.push_back(sound_update);
                 }

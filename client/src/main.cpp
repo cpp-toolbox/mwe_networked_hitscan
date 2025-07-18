@@ -151,12 +151,16 @@ void firing_logic(bool fire_just_pressed, ToolboxEngine &tbx_engine, JPH::Ref<JP
         auto hit_position = physics_target->GetPosition();
         if (had_hit) {
             std::cout << "hit target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
-                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << std::endl;
+                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << " with yaw, pitch "
+                      << tbx_engine.fps_camera.transform.get_rotation_yaw() << ", "
+                      << tbx_engine.fps_camera.transform.get_rotation_pitch() << std::endl;
             tbx_engine.sound_system.queue_sound(SoundType::CLIENT_HIT);
         } else {
 
             std::cout << "missed target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
-                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << std::endl;
+                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << " with yaw, pitch "
+                      << tbx_engine.fps_camera.transform.get_rotation_yaw() << ", "
+                      << tbx_engine.fps_camera.transform.get_rotation_pitch() << std::endl;
             tbx_engine.sound_system.queue_sound(SoundType::CLIENT_MISS);
         }
     }
@@ -333,20 +337,31 @@ int main() {
 
     TemporalBinarySignal fire_pressed_per_send_tbs;
     bool fire_pressed_since_last_send = false;
+    bool fire_pressed_since_last_send_prev = false;
+
+    bool use_subtick_firing = false;
 
     std::function<void(double)> tick = [&](double dt) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (send_mouse_updates_signal.process_and_get_signal()) {
 
-            if (fire_pressed_since_last_send) {
-                fire_pressed_per_send_tbs.set_on();
-            } else {
-                fire_pressed_per_send_tbs.set_off();
-            }
+            bool fire_just_pressed_since_last_send =
+                fire_pressed_since_last_send and not fire_pressed_since_last_send_prev;
 
-            firing_logic(fire_pressed_per_send_tbs.is_just_on(), tbx_engine, physics_target,
-                         last_received_game_update_number);
+            // if (fire_pressed_since_last_send) {
+            //     fire_pressed_per_send_tbs.set_on();
+            // } else {
+            //     fire_pressed_per_send_tbs.set_off();
+            // }
+            //
+
+            if (not use_subtick_firing) {
+                // we only allow firing here so you can't fire on subtick which can cause descrepancies between hits on
+                // client and server
+                firing_logic(fire_just_pressed_since_last_send, tbx_engine, physics_target,
+                             last_received_game_update_number);
+            }
 
             if (not mouse_pos_history.empty()) {
 
@@ -364,9 +379,9 @@ int main() {
                 mup.header.size_of_data_without_header = sizeof(MouseUpdate);
                 mup.mouse_update = mu;
                 network.send_packet(&mup, sizeof(MouseUpdatePacket));
-
-                fire_pressed_since_last_send = false;
             }
+            fire_pressed_since_last_send_prev = fire_pressed_since_last_send;
+            fire_pressed_since_last_send = false;
         }
 
         std::vector<PacketWithSize> pws = network.get_network_events_received_since_last_tick();
@@ -396,6 +411,13 @@ int main() {
         } else {
             // tbx_engine::config_x_input_state_x_fps_camera_processing(tbx_engine.fps_camera, tbx_engine.input_state,
             //                                                          tbx_engine.configuration, dt);
+        }
+
+        if (use_subtick_firing) {
+            // we only allow firing here so you can't fire on subtick which can cause descrepancies between hits on
+            // client and server
+            firing_logic(tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON), tbx_engine, physics_target,
+                         last_received_game_update_number);
         }
 
         fire_pressed_since_last_send =
