@@ -46,6 +46,9 @@
 #include "networking/packets/packets.hpp"
 
 #include <iostream>
+#include <format>
+
+ConsoleLogger tick_logger{"tick"};
 
 glm::vec2 get_ndc_mouse_pos1(GLFWwindow *window, double xpos, double ypos) {
     int width, height;
@@ -147,24 +150,38 @@ class Hud3D {
 void firing_logic(bool fire_just_pressed, ToolboxEngine &tbx_engine, JPH::Ref<JPH::CharacterVirtual> physics_target,
                   unsigned int last_received_game_update_number) {
     if (fire_just_pressed) {
+        LogSection _(tick_logger, "firing logic");
         bool had_hit = run_hitscan_logic(tbx_engine.fps_camera, physics_target);
         auto hit_position = physics_target->GetPosition();
+
         if (had_hit) {
-            std::cout << "hit target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
-                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << " with yaw, pitch "
-                      << tbx_engine.fps_camera.transform.get_rotation_yaw() << ", "
-                      << tbx_engine.fps_camera.transform.get_rotation_pitch() << std::endl;
+            tick_logger.debug("hit target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
+                              last_received_game_update_number, hit_position.GetX(), hit_position.GetY(),
+                              hit_position.GetZ(), tbx_engine.fps_camera.transform.get_rotation_yaw(),
+                              tbx_engine.fps_camera.transform.get_rotation_pitch());
             tbx_engine.sound_system.queue_sound(SoundType::CLIENT_HIT);
         } else {
-
-            std::cout << "missed target lagun: " << last_received_game_update_number << " at: " << hit_position.GetX()
-                      << " , " << hit_position.GetY() << ", " << hit_position.GetZ() << " with yaw, pitch "
-                      << tbx_engine.fps_camera.transform.get_rotation_yaw() << ", "
-                      << tbx_engine.fps_camera.transform.get_rotation_pitch() << std::endl;
+            tick_logger.debug("missed target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}\n",
+                              last_received_game_update_number, hit_position.GetX(), hit_position.GetY(),
+                              hit_position.GetZ(), tbx_engine.fps_camera.transform.get_rotation_yaw(),
+                              tbx_engine.fps_camera.transform.get_rotation_pitch());
             tbx_engine.sound_system.queue_sound(SoundType::CLIENT_MISS);
         }
     }
 }
+
+// next step is this, instead of immediately setting the targets position, instead we wait until we have two game
+// updates, we don't actually wait though, whatever the servers send rate is (put in shared and then distribute as
+// constants file), then we take that period and double it and add some threshold, then we're almost always guarenteed
+// to have 2 game updates loaded in, assume we do have two updates loaded in, then when we fire the gun, we have to
+// figure out how far we are between those two updates, to do this as time progresses we interpolate between the two
+// positions, and we can determine the value beteen 0 and 1 to see how far along we are. Once we know that we can
+// package that in with the game update, and then send that to the server, and then we can rollback to that point and
+// interpolate and then fire.
+//
+// How do we do it as we iterate in a tick we want to know how far we are between two updates, once we have two updates
+// we immediately start some sort of timer, what if we have an iterating loop then and every 60hz period we load in the
+// next game update, as we iterate we get a sub section of that time, and
 
 int main() {
 
@@ -220,12 +237,15 @@ int main() {
     std::vector<LabelledMousePos> mouse_pos_history;
 
     std::function<void(const void *)> game_update_handler = [&](const void *data) {
+        LogSection _(tick_logger, "game update handler");
         const GameUpdatePacket *packet = reinterpret_cast<const GameUpdatePacket *>(data);
         GameUpdate just_received_game_update = packet->game_update;
 
         last_received_game_update_number = just_received_game_update.update_number;
 
-        mouse_update_logger.log_game_update(just_received_game_update);
+        tick_logger.debug("just received game update");
+        tick_logger.debug("last processed mouse update: {}",
+                          just_received_game_update.last_processed_mouse_pos_update_number);
 
         auto predicted_yaw = tbx_engine.fps_camera.transform.get_rotation_yaw();
         auto predicted_pitch = tbx_engine.fps_camera.transform.get_rotation_pitch();
@@ -233,37 +253,47 @@ int main() {
         tbx_engine.fps_camera.transform.set_rotation_pitch(just_received_game_update.pitch);
         tbx_engine.fps_camera.transform.set_rotation_yaw(just_received_game_update.yaw);
 
+        tick_logger.debug("setting camera angle based on what server says | yaw: {} pitch: {} ",
+                          tbx_engine.fps_camera.transform.get_rotation_yaw(),
+                          tbx_engine.fps_camera.transform.get_rotation_pitch());
+
         glm::vec3 new_target_pos(just_received_game_update.target_x_pos, just_received_game_update.target_y_pos,
                                  just_received_game_update.target_z_pos);
 
         physics_target->SetPosition(g2j(new_target_pos));
         target.transform.set_translation(new_target_pos);
 
+        tick_logger.debug("just updated the targets position to: {}", vec3_to_string(new_target_pos));
+
         // NOTE: we don't ever need to use updates that came before
         std::erase_if(mouse_pos_history, [&](const auto &lmp) {
             return lmp.mouse_pos_update_number < just_received_game_update.last_processed_mouse_pos_update_number;
         });
 
-        mouse_update_logger.logger.debug("starting reconciliation");
+        tick_logger.start_section("reconciliation");
+        tick_logger.debug("before reconciling our client simulated angles were yaw: {} pitch: {} ", predicted_yaw,
+                          predicted_pitch);
         for (const auto &lmp : mouse_pos_history) {
             if (lmp.mouse_pos_update_number == just_received_game_update.last_processed_mouse_pos_update_number) {
-                mouse_update_logger.logger.debug("set mouse position: ({}, {})", lmp.x_pos, lmp.y_pos);
+                tick_logger.debug("set mouse position to the last processed one on the server: ({}, {})", lmp.x_pos,
+                                  lmp.y_pos);
                 tbx_engine.fps_camera.mouse.last_mouse_position_x = lmp.x_pos;
                 tbx_engine.fps_camera.mouse.last_mouse_position_y = lmp.y_pos;
             } else if (lmp.mouse_pos_update_number > just_received_game_update.last_processed_mouse_pos_update_number) {
-                mouse_update_logger.logger.debug("reapplying mouse position: ({}, {})", lmp.x_pos, lmp.y_pos);
+                tick_logger.debug("reapplying mouse position: ({}, {})", lmp.x_pos, lmp.y_pos);
                 tbx_engine.fps_camera.mouse_callback(lmp.x_pos, lmp.y_pos);
-                mouse_update_logger.logger.debug("new yaw pitch: ({}, {})",
-                                                 tbx_engine.fps_camera.transform.get_rotation_yaw(),
-                                                 tbx_engine.fps_camera.transform.get_rotation_pitch());
+                tick_logger.debug("resulting in yaw pitch: ({}, {})",
+                                  tbx_engine.fps_camera.transform.get_rotation_yaw(),
+                                  tbx_engine.fps_camera.transform.get_rotation_pitch());
             }
         }
+        tick_logger.end_section("reconciliation");
 
         auto reconciled_yaw = tbx_engine.fps_camera.transform.get_rotation_yaw();
         auto reconciled_pitch = tbx_engine.fps_camera.transform.get_rotation_pitch();
 
-        mouse_update_logger.logger.debug("cpsr yaw pitch deltas: ({}, {})", reconciled_yaw - predicted_yaw,
-                                         reconciled_pitch - predicted_pitch);
+        tick_logger.debug("cpsr yaw pitch deltas: ({}, {})", reconciled_yaw - predicted_yaw,
+                          reconciled_pitch - predicted_pitch);
     };
 
     packet_handler.register_handler(PacketType::GAME_UPDATE, game_update_handler);
@@ -279,8 +309,11 @@ int main() {
     unsigned int mouse_pos_update_number = 0;
 
     std::function<void(double, double)> mouse_pos_callback = [&](double xpos, double ypos) {
+        LogSection _(tick_logger, "mouse pos callback");
         tbx_engine.fps_camera.mouse_callback(xpos, ypos);
-        mouse_update_logger.log(xpos, ypos, mouse_pos_update_number, tbx_engine.fps_camera);
+        tick_logger.debug("after processing [{}]: ({}, {}) we produced yaw pitch: ({}, {})", mouse_pos_update_number,
+                          xpos, ypos, tbx_engine.fps_camera.transform.get_rotation_yaw(),
+                          tbx_engine.fps_camera.transform.get_rotation_pitch());
         tbx_engine.input_state.glfw_cursor_pos_callback(xpos, ypos);
         LabelledMousePos lmp(mouse_pos_update_number, xpos, ypos);
         mouse_pos_history.push_back(lmp);
@@ -332,9 +365,6 @@ int main() {
                                         ShaderUniformVariable::ASPECT_RATIO,
                                         glm::vec2(tbx_engine.window.height_px / (float)tbx_engine.window.width_px, 1));
 
-    ConsoleLogger tick_logger;
-    tick_logger.disable_all_levels();
-
     TemporalBinarySignal fire_pressed_per_send_tbs;
     bool fire_pressed_since_last_send = false;
     bool fire_pressed_since_last_send_prev = false;
@@ -342,12 +372,18 @@ int main() {
     bool use_subtick_firing = false;
 
     std::function<void(double)> tick = [&](double dt) {
+        LogSection _(tick_logger, "tick");
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (send_mouse_updates_signal.process_and_get_signal()) {
 
+            LogSection _(tick_logger, "sending mouse updates");
+
             bool fire_just_pressed_since_last_send =
                 fire_pressed_since_last_send and not fire_pressed_since_last_send_prev;
+
+            tick_logger.debug("fire_just_pressed_since_last_send: ", fire_just_pressed_since_last_send);
 
             // if (fire_pressed_since_last_send) {
             //     fire_pressed_per_send_tbs.set_on();
@@ -365,11 +401,12 @@ int main() {
 
             if (not mouse_pos_history.empty()) {
 
+                LogSection _(tick_logger, "about to send the last mouse pos in history");
+
                 auto last_mouse_pos = mouse_pos_history.back();
 
-                mouse_update_logger.logger.debug("sending out mouse pos [{}]: ({}, {})",
-                                                 last_mouse_pos.mouse_pos_update_number, last_mouse_pos.x_pos,
-                                                 last_mouse_pos.y_pos);
+                tick_logger.debug("sending out mouse pos [{}]: ({}, {})", last_mouse_pos.mouse_pos_update_number,
+                                  last_mouse_pos.x_pos, last_mouse_pos.y_pos);
                 MouseUpdate mu(last_mouse_pos.mouse_pos_update_number, last_received_game_update_number,
                                last_mouse_pos.x_pos, last_mouse_pos.y_pos,
                                fire_pressed_since_last_send, // NOTE: we use this instead of sampling the keyboard now.
@@ -423,8 +460,12 @@ int main() {
         fire_pressed_since_last_send =
             fire_pressed_since_last_send or tbx_engine.input_state.is_pressed(EKey::LEFT_MOUSE_BUTTON);
 
-        std::cout << "mouse update: " << mouse_pos_update_number << " fpsls: " << fire_pressed_since_last_send
-                  << std::endl;
+        if (fire_pressed_since_last_send)
+            tick_logger.debug("after processing ");
+
+        // std::cout << "mouse update: " << mouse_pos_update_number << " fpsls: " <<
+        // fire_pressed_since_last_send
+        //           << std::endl;
 
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.upload_ltw_matrices();
         tbx_engine.batcher.cwl_v_transformation_ubos_1024_with_colored_vertex_shader_batcher.draw_everything();

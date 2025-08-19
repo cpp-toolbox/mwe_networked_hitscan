@@ -28,6 +28,8 @@
 #include "system_logic/mouse_update_logger/mouse_update_logger.hpp"
 #include "system_logic/hitscan_logic/hitscan_logic.hpp"
 
+ConsoleLogger tick_logger{"tick"};
+
 int main() {
 
     // TODO: get a packet handler in here, make a mouse update packet and then
@@ -64,6 +66,7 @@ int main() {
     std::vector<MouseUpdate> mouse_updates_since_last_tick;
 
     std::function<void(const void *)> mouse_update_handler = [&](const void *data) {
+        tick_logger.debug("mouse update received");
         const MouseUpdatePacket *packet = reinterpret_cast<const MouseUpdatePacket *>(data);
         MouseUpdate just_received_mouse_update = packet->mouse_update;
         mouse_updates_since_last_tick.push_back(just_received_mouse_update);
@@ -75,6 +78,7 @@ int main() {
     std::unordered_map<unsigned int, JPH::StateRecorderImpl> update_number_to_physics_state;
 
     std::function<void(double)> tick = [&](double dt) {
+        LogSection _(tick_logger, "tick");
         std::vector<PacketWithSize> pws = network.get_network_events_since_last_tick();
         packet_handler.handle_packets(pws);
 
@@ -88,13 +92,13 @@ int main() {
 
         update_number_to_physics_state.emplace(update_number, std::move(physics_target_physics_state));
 
+        tick_logger.start_section("iterating over mouse updates since last tick");
         for (const MouseUpdate &mu : mouse_updates_since_last_tick) {
 
             fps_camera.mouse_callback(mu.x_pos, mu.y_pos, mu.sensitivity);
             mouse_update_logger.log(mu.x_pos, mu.y_pos, mu.mouse_pos_update_number, fps_camera);
 
-            std::cout << "mouse update: " << mu.mouse_pos_update_number << " fire pressed: " << mu.fire_pressed
-                      << std::endl;
+            tick_logger.debug("mouse update: {} fire pressed: {}", mu.mouse_pos_update_number, mu.fire_pressed);
 
             if (mu.fire_pressed) {
                 fire_tbs.set_true();
@@ -103,7 +107,7 @@ int main() {
             }
 
             if (fire_tbs.just_switched_on()) {
-                std::cout << "firing" << std::endl;
+                LogSection _(tick_logger, "firing logic");
 
                 JPH::StateRecorderImpl current_physics_state;
                 physics_target->SaveState(current_physics_state);
@@ -111,25 +115,35 @@ int main() {
                 JPH::StateRecorderImpl &physics_state_when_fire_occurred =
                     update_number_to_physics_state.at(mu.last_applied_game_update_number);
 
+                auto before_position = physics_target->GetPosition();
                 physics_target->RestoreState(physics_state_when_fire_occurred);
+                auto restored_position = physics_target->GetPosition();
+
+                tick_logger.debug("restored target position to : ({}, {}, {}) from position: ({}, {}, {})",
+                                  restored_position.GetX(), restored_position.GetY(), restored_position.GetZ(),
+                                  before_position.GetX(), before_position.GetY(), before_position.GetZ());
 
                 bool had_hit = run_hitscan_logic(fps_camera, physics_target);
                 auto hit_position = physics_target->GetPosition();
                 if (had_hit) {
-                    std::cout << "hit target lagun: " << mu.last_applied_game_update_number
-                              << " at: " << hit_position.GetX() << " , " << hit_position.GetY() << ", "
-                              << hit_position.GetZ() << " with yaw, pitch " << fps_camera.transform.get_rotation_yaw()
-                              << ", " << fps_camera.transform.get_rotation_pitch() << std::endl;
+
+                    tick_logger.debug("hit target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
+                                      mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
+                                      hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
+                                      fps_camera.transform.get_rotation_pitch());
+
                     sphere_orbiter.set_travel_axis(random_unit_vector());
                     sphere_orbiter.set_radius(random_float(room_size / 4, room_size / 2));
                     sphere_orbiter.set_angular_speed(random_float(glm::radians(45.0f), glm::radians(180.0f)));
                     SoundUpdate sound_update(SoundType::SERVER_HIT, 0, 0, 0);
                     sound_updates_this_tick.push_back(sound_update);
                 } else {
-                    std::cout << "missed target lagun: " << mu.last_applied_game_update_number
-                              << " at: " << hit_position.GetX() << " , " << hit_position.GetY() << ", "
-                              << hit_position.GetZ() << " with yaw, pitch " << fps_camera.transform.get_rotation_yaw()
-                              << ", " << fps_camera.transform.get_rotation_pitch() << std::endl;
+
+                    tick_logger.debug("missed target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
+                                      mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
+                                      hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
+                                      fps_camera.transform.get_rotation_pitch());
+
                     SoundUpdate sound_update(SoundType::SERVER_MISS, 0, 0, 0);
                     sound_updates_this_tick.push_back(sound_update);
                 }
@@ -142,6 +156,7 @@ int main() {
             last_processed_mouse_pos_update_number = mu.mouse_pos_update_number;
         }
         mouse_updates_since_last_tick.clear();
+        tick_logger.end_section("iterating over mouse updates since last tick");
 
         auto target_pos = physics_target->GetPosition();
 
