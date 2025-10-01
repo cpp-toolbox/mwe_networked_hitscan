@@ -295,3 +295,45 @@
 [submodule "client/src/utility/temporal_binary_switch"]
 	path = client/src/utility/temporal_binary_switch
 	url = git@github.com:cpp-toolbox/temporal_binary_switch.git
+[submodule "client/src/utility/meta_utils"]
+	path = client/src/utility/meta_utils
+	url = git@github.com:cpp-toolbox/meta_utils.git
+[submodule "client/src/utility/regex_utils"]
+	path = client/src/utility/regex_utils
+	url = git@github.com:cpp-toolbox/regex_utils.git
+[submodule "client/src/utility/cpp_parsing"]
+	path = client/src/utility/cpp_parsing
+	url = git@github.com:cpp-toolbox/cpp_parsing.git
+[submodule "client/src/utility/collection_utils"]
+	path = client/src/utility/collection_utils
+	url = git@github.com:cpp-toolbox/collection_utils.git
+[submodule "client/src/utility/linalg_utils"]
+	path = client/src/utility/linalg_utils
+	url = git@github.com:cpp-toolbox/linalg_utils.git
+[submodule "server/src/utility/meta_utils"]
+	path = server/src/utility/meta_utils
+	url = git@github.com:cpp-toolbox/meta_utils.git
+[submodule "server/src/utility/text_utils"]
+	path = server/src/utility/text_utils
+	url = git@github.com:cpp-toolbox/text_utils.git
+[submodule "server/src/utility/regex_utils"]
+	path = server/src/utility/regex_utils
+	url = git@github.com:cpp-toolbox/regex_utils.git
+[submodule "server/src/utility/fs_utils"]
+	path = server/src/utility/fs_utils
+	url = git@github.com:cpp-toolbox/fs_utils.git
+[submodule "server/src/utility/cpp_parsing"]
+	path = server/src/utility/cpp_parsing
+	url = git@github.com:cpp-toolbox/cpp_parsing.git
+[submodule "server/src/utility/collection_utils"]
+	path = server/src/utility/collection_utils
+	url = git@github.com:cpp-toolbox/collection_utils.git
+[submodule "server/src/utility/config_file_parser"]
+	path = server/src/utility/config_file_parser
+	url = git@github.com:cpp-toolbox/config_file_parser.git
+[submodule "client/src/utility/user_input"]
+	path = client/src/utility/user_input
+	url = git@github.com:cpp-toolbox/user_input.git
+[submodule "server/src/utility/user_input"]
+	path = server/src/utility/user_input
+	url = git@github.com:cpp-toolbox/user_input.git

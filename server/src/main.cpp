@@ -10,6 +10,7 @@
 
 #include <glm/fwd.hpp>
 
+#include "meta_program/meta_program.hpp"
 #include "networking/packet_handler/packet_handler.hpp"
 #include "networking/packets/packets.hpp"
 #include "networking/server_networking/network.hpp"
@@ -19,8 +20,11 @@
 #include "sound/sound_types/sound_types.hpp"
 
 #include "utility/fixed_frequency_loop/fixed_frequency_loop.hpp"
+#include "utility/logger/logger.hpp"
 #include "utility/temporal_binary_switch/temporal_binary_switch.hpp"
 #include "utility/jolt_glm_type_conversions/jolt_glm_type_conversions.hpp"
+#include "utility/config_file_parser/config_file_parser.hpp"
+#include "utility/meta_utils/meta_utils.hpp"
 
 #include "system_logic/physics/physics.hpp"
 #include "system_logic/random_vector/random_vector.hpp"
@@ -28,13 +32,23 @@
 #include "system_logic/mouse_update_logger/mouse_update_logger.hpp"
 #include "system_logic/hitscan_logic/hitscan_logic.hpp"
 
-ConsoleLogger tick_logger{"tick"};
-
 int main() {
 
-    // TODO: get a packet handler in here, make a mouse update packet and then
-    // move aiming logic onto the server, then we work on client and make it feel
-    // good.
+    global_logger.remove_all_sinks();
+    global_logger.add_file_sink("logs.txt");
+
+    Configuration configuration("assets/config/user_cfg.ini");
+
+    if (configuration.get_value("general", "development_mode") == "on") {
+        meta_utils::CustomTypeExtractionSettings settings("src/networking/packet_types/packet_types.hpp");
+        meta_utils::CustomTypeExtractionSettings settings1("src/networking/packet_data/packet_data.hpp");
+        meta_utils::CustomTypeExtractionSettings settings2("src/sound/sound_types/sound_types.hpp");
+        meta_utils::CustomTypeExtractionSettings settings3("src/networking/packets/packets.hpp");
+        meta_utils::register_custom_types_into_meta_types({settings, settings1, settings2, settings3});
+        meta_utils::generate_string_invokers_program_wide({}, meta_utils::meta_types.get_concrete_types());
+    }
+
+    meta_program::MetaProgram mp(meta_utils::meta_types.get_concrete_types());
 
     bool running = true;
     unsigned int last_processed_mouse_pos_update_number = 0;
@@ -56,7 +70,7 @@ int main() {
     network.initialize_network();
 
     MouseUpdateLogger mouse_update_logger;
-    mouse_update_logger.logger.disable_all_levels();
+    // mouse_update_logger.logger.disable_all_levels();
 
     PacketHandler packet_handler;
 
@@ -65,10 +79,11 @@ int main() {
     std::vector<SoundUpdate> sound_updates_this_tick;
     std::vector<MouseUpdate> mouse_updates_since_last_tick;
 
-    std::function<void(const void *)> mouse_update_handler = [&](const void *data) {
-        tick_logger.debug("mouse update received");
-        const MouseUpdatePacket *packet = reinterpret_cast<const MouseUpdatePacket *>(data);
-        MouseUpdate just_received_mouse_update = packet->mouse_update;
+    std::function<void(std::vector<uint8_t>)> mouse_update_handler = [&](std::vector<uint8_t> raw_packet) {
+        LogSection _(global_logger, "mouse update handler");
+        const MouseUpdatePacket packet = mp.deserialize_MouseUpdatePacket(raw_packet);
+        MouseUpdate just_received_mouse_update = packet.mouse_update;
+        global_logger.info("just received mouse update packet: {}", mp.MouseUpdatePacket_to_string(packet));
         mouse_updates_since_last_tick.push_back(just_received_mouse_update);
     };
 
@@ -78,7 +93,7 @@ int main() {
     std::unordered_map<unsigned int, JPH::StateRecorderImpl> update_number_to_physics_state;
 
     std::function<void(double)> tick = [&](double dt) {
-        LogSection _(tick_logger, "tick");
+        LogSection _(global_logger, "tick");
         std::vector<PacketWithSize> pws = network.get_network_events_since_last_tick();
         packet_handler.handle_packets(pws);
 
@@ -92,13 +107,11 @@ int main() {
 
         update_number_to_physics_state.emplace(update_number, std::move(physics_target_physics_state));
 
-        tick_logger.start_section("iterating over mouse updates since last tick");
+        global_logger.start_section("iterating over mouse updates since last tick");
         for (const MouseUpdate &mu : mouse_updates_since_last_tick) {
+            global_logger.info("iterating over mouse update: {}", mp.MouseUpdate_to_string(mu));
 
             fps_camera.mouse_callback(mu.x_pos, mu.y_pos, mu.sensitivity);
-            mouse_update_logger.log(mu.x_pos, mu.y_pos, mu.mouse_pos_update_number, fps_camera);
-
-            tick_logger.debug("mouse update: {} fire pressed: {}", mu.mouse_pos_update_number, mu.fire_pressed);
 
             if (mu.fire_pressed) {
                 fire_tbs.set_true();
@@ -107,7 +120,9 @@ int main() {
             }
 
             if (fire_tbs.just_switched_on()) {
-                LogSection _(tick_logger, "firing logic");
+                LogSection _(global_logger, "firing logic");
+
+                global_logger.info("we will now restore the physics state to what it was when the user fired");
 
                 JPH::StateRecorderImpl current_physics_state;
                 physics_target->SaveState(current_physics_state);
@@ -119,18 +134,18 @@ int main() {
                 physics_target->RestoreState(physics_state_when_fire_occurred);
                 auto restored_position = physics_target->GetPosition();
 
-                tick_logger.debug("restored target position to : ({}, {}, {}) from position: ({}, {}, {})",
-                                  restored_position.GetX(), restored_position.GetY(), restored_position.GetZ(),
-                                  before_position.GetX(), before_position.GetY(), before_position.GetZ());
+                global_logger.debug("restored target position to: ({}, {}, {}) from position: ({}, {}, {})",
+                                    restored_position.GetX(), restored_position.GetY(), restored_position.GetZ(),
+                                    before_position.GetX(), before_position.GetY(), before_position.GetZ());
 
                 bool had_hit = run_hitscan_logic(fps_camera, physics_target);
                 auto hit_position = physics_target->GetPosition();
                 if (had_hit) {
 
-                    tick_logger.debug("hit target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
-                                      mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
-                                      hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
-                                      fps_camera.transform.get_rotation_pitch());
+                    global_logger.debug("hit target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
+                                        mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
+                                        hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
+                                        fps_camera.transform.get_rotation_pitch());
 
                     sphere_orbiter.set_travel_axis(random_unit_vector());
                     sphere_orbiter.set_radius(random_float(room_size / 4, room_size / 2));
@@ -139,24 +154,21 @@ int main() {
                     sound_updates_this_tick.push_back(sound_update);
                 } else {
 
-                    tick_logger.debug("missed target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
-                                      mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
-                                      hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
-                                      fps_camera.transform.get_rotation_pitch());
+                    global_logger.debug("missed target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
+                                        mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
+                                        hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
+                                        fps_camera.transform.get_rotation_pitch());
 
                     SoundUpdate sound_update(SoundType::SERVER_MISS, 0, 0, 0);
                     sound_updates_this_tick.push_back(sound_update);
                 }
 
                 physics_target->RestoreState(current_physics_state);
-            } else {
-                std::cout << "not firing" << std::endl;
             }
-
             last_processed_mouse_pos_update_number = mu.mouse_pos_update_number;
         }
         mouse_updates_since_last_tick.clear();
-        tick_logger.end_section("iterating over mouse updates since last tick");
+        global_logger.end_section("iterating over mouse updates since last tick");
 
         auto target_pos = physics_target->GetPosition();
 
@@ -165,11 +177,14 @@ int main() {
 
         GameUpdatePacket gup;
         gup.header.type = PacketType::GAME_UPDATE;
-        gup.header.size_of_data_without_header = sizeof(GameUpdate);
+        gup.header.size_of_data_without_header = mp.size_when_serialized_GameUpdate(gu);
         gup.game_update = gu;
 
+        // NOTE: what is the point of this check here, why not just broadcast?
         if (network.get_connected_client_ids().size() == 1) {
-            network.unreliable_send(network.get_connected_client_ids().at(0), &gup, sizeof(GameUpdatePacket));
+            auto buffer = mp.serialize_GameUpdatePacket(gup);
+            network.unreliable_send(network.get_connected_client_ids().at(0), buffer.data(), buffer.size());
+            global_logger.info("just sent game update packet: {}:", mp.GameUpdatePacket_to_string(gup));
         }
 
         update_number += 1;
@@ -177,11 +192,13 @@ int main() {
         for (const auto &su : sound_updates_this_tick) {
             SoundUpdatePacket sup;
             sup.header.type = PacketType::SOUND_UPDATE;
-            sup.header.size_of_data_without_header = sizeof(SoundUpdate);
+            sup.header.size_of_data_without_header = mp.size_when_serialized_SoundUpdate(su);
             sup.sound_update = su;
 
             if (network.get_connected_client_ids().size() == 1) {
-                network.unreliable_send(network.get_connected_client_ids().at(0), &sup, sizeof(SoundUpdatePacket));
+                auto buffer = mp.serialize_SoundUpdatePacket(sup);
+                network.unreliable_send(network.get_connected_client_ids().at(0), buffer.data(), buffer.size());
+                global_logger.info("just sent sound update packet: {}:", mp.SoundUpdatePacket_to_string(sup));
             }
         }
         sound_updates_this_tick.clear();
