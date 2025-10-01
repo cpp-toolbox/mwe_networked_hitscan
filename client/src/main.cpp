@@ -187,8 +187,6 @@ int main() {
     global_logger.remove_all_sinks();
     global_logger.add_file_sink("logs.txt");
 
-    bool entity_interpolation = true;
-
     // temporary badness
     std::unordered_map<SoundType, std::string> sound_type_to_file = {
         {SoundType::CLIENT_HIT, "assets/sounds/client_hit.wav"},
@@ -204,6 +202,8 @@ int main() {
                              {ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_COLORED_VERTEX,
                               ShaderType::ABSOLUTE_POSITION_WITH_COLORED_VERTEX},
                              sound_type_to_file);
+
+    bool entity_interpolation = tbx_engine.configuration.get_value("general", "entity_interpolation") == "on";
 
     if (tbx_engine.configuration.get_value("general", "development_mode") == "on") {
         meta_utils::CustomTypeExtractionSettings settings("src/networking/packet_types/packet_types.hpp");
