@@ -187,7 +187,7 @@ int main() {
     global_logger.remove_all_sinks();
     global_logger.add_file_sink("logs.txt");
 
-    bool entity_interpolation = false;
+    bool entity_interpolation = true;
 
     // temporary badness
     std::unordered_map<SoundType, std::string> sound_type_to_file = {
@@ -246,9 +246,9 @@ int main() {
         double y_pos;
     };
 
-    unsigned int last_received_game_update_number = 0;
+    unsigned int last_applied_game_update_number = 0;
     std::vector<LabelledMousePos> mouse_pos_history;
-    std::vector<GameUpdate> recently_received_game_updates;
+    std::vector<GameUpdate> recent_game_updates_for_entity_interpolation;
 
     Stopwatch game_update_received;
 
@@ -262,7 +262,7 @@ int main() {
         global_logger.info("just received game update packet: {}", mp.GameUpdatePacket_to_string(packet));
         game_update_received.press();
 
-        last_received_game_update_number = just_received_game_update.update_number;
+        last_applied_game_update_number = just_received_game_update.update_number;
 
         global_logger.debug("just received game update, receiving at rate {}", game_update_received.average_frequency);
         global_logger.debug("last processed mouse update: {}",
@@ -283,15 +283,17 @@ int main() {
             glm::vec3 new_target_pos(just_received_game_update.target_x_pos, just_received_game_update.target_y_pos,
                                      just_received_game_update.target_z_pos);
 
+            // NOTE: when not using entity interpolation we just slap the entities position right in
             physics_target->SetPosition(g2j(new_target_pos));
             target.transform.set_translation(new_target_pos);
 
             global_logger.debug("just updated the targets position to: {}", vec3_to_string(new_target_pos));
         } else {
 
-            recently_received_game_updates.push_back(just_received_game_update);
+            // NOTE: when using entity interpolation we push back the game update to the vector
+            recent_game_updates_for_entity_interpolation.push_back(just_received_game_update);
             global_logger.debug("just added game update to recently received game updates, size is now: {}",
-                                recently_received_game_updates.size());
+                                recent_game_updates_for_entity_interpolation.size());
         }
 
         // NOTE: we don't ever need to use updates that came before
@@ -432,7 +434,7 @@ int main() {
                 // we only allow firing here so you can't fire on subtick which can cause descrepancies between hits on
                 // client and server
                 firing_logic(fire_just_pressed_since_last_send, tbx_engine, physics_target,
-                             last_received_game_update_number);
+                             last_applied_game_update_number);
             }
 
             if (not mouse_pos_history.empty()) {
@@ -443,7 +445,7 @@ int main() {
 
                 global_logger.debug("sending out mouse pos [{}]: ({}, {})", last_mouse_pos.mouse_pos_update_number,
                                     last_mouse_pos.x_pos, last_mouse_pos.y_pos);
-                MouseUpdate mu(last_mouse_pos.mouse_pos_update_number, last_received_game_update_number,
+                MouseUpdate mu(last_mouse_pos.mouse_pos_update_number, last_applied_game_update_number,
                                last_mouse_pos.x_pos, last_mouse_pos.y_pos,
                                fire_pressed_since_last_send, // NOTE: we use this instead of sampling the keyboard now.
                                tbx_engine.fps_camera.active_sensitivity);
@@ -496,16 +498,15 @@ int main() {
             // we only allow firing here so you can't fire on subtick which can cause descrepancies between hits on
             // client and server
             firing_logic(tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON), tbx_engine, physics_target,
-                         last_received_game_update_number);
+                         last_applied_game_update_number);
         }
 
-        // entity interpolation
         if (entity_interpolation) {
-            if (recently_received_game_updates.size() >= 2) {
+            if (recent_game_updates_for_entity_interpolation.size() >= 2) {
                 LogSection _(global_logger, "entity interpolation");
 
-                auto start_game_update = recently_received_game_updates.at(0);
-                auto end_game_update = recently_received_game_updates.at(1);
+                auto start_game_update = recent_game_updates_for_entity_interpolation.at(0);
+                auto end_game_update = recent_game_updates_for_entity_interpolation.at(1);
 
                 auto start_position = glm::vec3(start_game_update.target_x_pos, start_game_update.target_y_pos,
                                                 start_game_update.target_z_pos);
@@ -533,9 +534,10 @@ int main() {
 
                 if (mock_server_send_signal.process_and_get_signal()) {
                     global_logger.debug("mock server send signal activated");
-                    recently_received_game_updates.erase(recently_received_game_updates.begin());
+                    recent_game_updates_for_entity_interpolation.erase(
+                        recent_game_updates_for_entity_interpolation.begin());
                     global_logger.debug("after erasing from start of game updates the size is: {}",
-                                        recently_received_game_updates.size());
+                                        recent_game_updates_for_entity_interpolation.size());
                 }
             }
         }
