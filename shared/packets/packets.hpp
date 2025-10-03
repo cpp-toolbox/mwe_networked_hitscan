@@ -8,21 +8,29 @@
 
 struct MouseUpdate {
   unsigned int mouse_pos_update_number;
-  unsigned int last_applied_game_update_number;
+  // subtick specific stuff
+
+  // NOTE: the two game updates below are not always synchronized, when entity
+  // interpolation is turned on then its last applied game update number will be
+  // smaller then the one for the camera, that's because entities rendering is
+  // delayed so that we can interpolate
+  unsigned int
+      last_applied_game_update_number_before_firing_entity_interpolation;
+  // NOTE: this game update number is the one that we use during cpsr on the
+  // camera, it more "up to date" then the entity number because we want to stay
+  // as synchronized with the server as possible
+  unsigned int last_applied_game_update_number_before_firing_camera_cpsr;
+
+  double subtick_percentage_when_fire_pressed;
+  // NOTE: these are required because yaw pitch has to be adjusted as well as
+  // target position during server revert
+  double subtick_x_pos_before_firing;
+  double subtick_y_pos_before_firing;
+  // regular stuff
   double x_pos;
   double y_pos;
   bool fire_pressed;
   double sensitivity;
-
-  friend std::ostream &operator<<(std::ostream &os, const MouseUpdate &mu) {
-    os << "MouseUpdate { "
-       << "update_number: " << mu.mouse_pos_update_number << ", "
-       << "x_pos: " << mu.x_pos << ", "
-       << "y_pos: " << mu.y_pos << ", "
-       << "fire_pressed: " << std::boolalpha << mu.fire_pressed << ", "
-       << "sensitivity: " << mu.sensitivity << " }";
-    return os;
-  }
 };
 
 struct GameUpdate {
@@ -33,18 +41,6 @@ struct GameUpdate {
   double target_x_pos;
   double target_y_pos;
   double target_z_pos;
-
-  friend std::ostream &operator<<(std::ostream &os, const GameUpdate &gu) {
-    os << "GameUpdate { "
-       << "last_update_number: " << gu.last_processed_mouse_pos_update_number
-       << "update_number: " << gu.update_number << ", "
-       << "yaw: " << gu.yaw << ", "
-       << "pitch: " << gu.pitch << ", "
-       << "target_x: " << gu.target_x_pos << ", "
-       << "target_y: " << gu.target_y_pos << ", "
-       << "target_z: " << gu.target_z_pos << " }";
-    return os;
-  }
 };
 
 struct SoundUpdate {

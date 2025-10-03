@@ -32,6 +32,20 @@
 #include "system_logic/mouse_update_logger/mouse_update_logger.hpp"
 #include "system_logic/hitscan_logic/hitscan_logic.hpp"
 
+struct CameraReconstructionData {
+    double yaw;
+    double pitch;
+    double last_mouse_position_x;
+    double last_mouse_position_y;
+};
+
+void set_camera_state(CameraReconstructionData crd, FPSCamera &fps_camera) {
+    fps_camera.transform.set_rotation_yaw(crd.yaw);
+    fps_camera.transform.set_rotation_pitch(crd.pitch);
+    fps_camera.mouse.last_mouse_position_x = crd.last_mouse_position_x;
+    fps_camera.mouse.last_mouse_position_y = crd.last_mouse_position_y;
+}
+
 int main() {
 
     global_logger.remove_all_sinks();
@@ -63,6 +77,8 @@ int main() {
 
     auto physics_target = physics.create_character(0);
 
+    bool subtick_firing_accuracy = true;
+
     FPSCamera fps_camera;
 
     Network network(7777);
@@ -90,7 +106,10 @@ int main() {
     packet_handler.register_handler(PacketType::MOUSE_UPDATE, mouse_update_handler);
 
     unsigned int update_number = 0;
+    // NOTE: the below two things are used for going back in time to take the corrected shot.
     std::unordered_map<unsigned int, JPH::StateRecorderImpl> update_number_to_physics_state;
+
+    std::unordered_map<unsigned int, CameraReconstructionData> update_number_to_camera_reconstruction_data;
 
     std::function<void(double)> tick = [&](double dt) {
         LogSection _(global_logger, "tick");
@@ -106,6 +125,12 @@ int main() {
         physics_target->SaveState(physics_target_physics_state);
 
         update_number_to_physics_state.emplace(update_number, std::move(physics_target_physics_state));
+
+        CameraReconstructionData crd(fps_camera.transform.get_rotation_yaw(), fps_camera.transform.get_rotation_pitch(),
+                                     fps_camera.mouse.last_mouse_position_x, fps_camera.mouse.last_mouse_position_y);
+
+        // TODO: next step is to then when going back in time grab this and apply it.
+        update_number_to_camera_reconstruction_data.emplace(update_number, crd);
 
         global_logger.start_section("iterating over mouse updates since last tick");
         for (const MouseUpdate &mu : mouse_updates_since_last_tick) {
@@ -124,27 +149,95 @@ int main() {
 
                 global_logger.info("we will now restore the physics state to what it was when the user fired");
 
+                JPH::Vec3 current_position = physics_target->GetPosition(), restored_position;
+
                 JPH::StateRecorderImpl current_physics_state;
                 physics_target->SaveState(current_physics_state);
 
-                JPH::StateRecorderImpl &physics_state_when_fire_occurred =
-                    update_number_to_physics_state.at(mu.last_applied_game_update_number);
+                CameraReconstructionData current_crd(
+                    fps_camera.transform.get_rotation_yaw(), fps_camera.transform.get_rotation_pitch(),
+                    fps_camera.mouse.last_mouse_position_x, fps_camera.mouse.last_mouse_position_y);
 
-                auto before_position = physics_target->GetPosition();
-                physics_target->RestoreState(physics_state_when_fire_occurred);
-                auto restored_position = physics_target->GetPosition();
+                if (subtick_firing_accuracy) {
+
+                    auto jvec3_to_string = [](const JPH::Vec3 &v) {
+                        return fmt::format("({}, {}, {})", v.GetX(), v.GetY(), v.GetZ());
+                    };
+
+                    LogSection _(global_logger, "subtick firing accuracy");
+
+                    auto t = mu.subtick_percentage_when_fire_pressed;
+                    global_logger.debug("subtick percentage when fire pressed: {}", t);
+
+                    auto before_update_number_entity =
+                        mu.last_applied_game_update_number_before_firing_entity_interpolation;
+                    auto after_update_number_entity = before_update_number_entity + 1;
+
+                    JPH::StateRecorderImpl &physics_state_before_fire_occurred =
+                        update_number_to_physics_state.at(before_update_number_entity);
+                    JPH::StateRecorderImpl &physics_state_after_fire_occurred =
+                        update_number_to_physics_state.at(after_update_number_entity);
+
+                    global_logger.debug("restoring physics state from game update {}", before_update_number_entity);
+                    physics_target->RestoreState(physics_state_before_fire_occurred);
+                    auto before_firing_position = physics_target->GetPosition();
+                    global_logger.debug("position before firing: {}", jvec3_to_string(before_firing_position));
+
+                    global_logger.debug("restoring physics state from game update {}", after_update_number_entity);
+                    physics_target->RestoreState(physics_state_after_fire_occurred);
+                    auto after_firing_position = physics_target->GetPosition();
+                    global_logger.debug("position after firing: {}", jvec3_to_string(after_firing_position));
+
+                    auto target_position_when_firing = (1 - t) * before_firing_position + t * after_firing_position;
+                    global_logger.debug("calculated subtick target position when firing: {}",
+                                        jvec3_to_string(target_position_when_firing));
+
+                    // restore physics to the pre-fire state (keeping other attributes consistent)
+                    physics_target->RestoreState(physics_state_before_fire_occurred);
+                    physics_target->SetPosition(target_position_when_firing);
+                    restored_position = target_position_when_firing;
+
+                    // camera reconstruction state logging
+                    CameraReconstructionData crd_before_fire_occurred = update_number_to_camera_reconstruction_data.at(
+                        mu.last_applied_game_update_number_before_firing_camera_cpsr);
+                    set_camera_state(crd_before_fire_occurred, fps_camera);
+
+                    global_logger.debug(
+                        "camera reconstruction from game update {}: yaw={}, pitch={}, last_mouse_x={}, last_mouse_y={}",
+                        mu.last_applied_game_update_number_before_firing_camera_cpsr, crd_before_fire_occurred.yaw,
+                        crd_before_fire_occurred.pitch, crd_before_fire_occurred.last_mouse_position_x,
+                        crd_before_fire_occurred.last_mouse_position_y);
+
+                    // apply subtick mouse input
+                    fps_camera.mouse_callback(mu.subtick_x_pos_before_firing, mu.subtick_y_pos_before_firing,
+                                              mu.sensitivity);
+                    global_logger.debug("applied subtick mouse callback with x={}, y={}, sensitivity={}",
+                                        mu.subtick_x_pos_before_firing, mu.subtick_y_pos_before_firing, mu.sensitivity);
+                } else {
+
+                    JPH::StateRecorderImpl &physics_state_when_fire_occurred = update_number_to_physics_state.at(
+                        mu.last_applied_game_update_number_before_firing_entity_interpolation);
+
+                    // NOTE: no camera "revert logic" because there is no subtick camera, and wherever the server thinks
+                    // it is is correct in this configuration
+
+                    physics_target->RestoreState(physics_state_when_fire_occurred);
+                    restored_position = physics_target->GetPosition();
+                }
 
                 global_logger.debug("restored target position to: ({}, {}, {}) from position: ({}, {}, {})",
                                     restored_position.GetX(), restored_position.GetY(), restored_position.GetZ(),
-                                    before_position.GetX(), before_position.GetY(), before_position.GetZ());
+                                    current_position.GetX(), current_position.GetY(), current_position.GetZ());
 
                 bool had_hit = run_hitscan_logic(fps_camera, physics_target);
                 auto hit_position = physics_target->GetPosition();
                 if (had_hit) {
 
-                    global_logger.debug("hit target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
-                                        mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
-                                        hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
+                    global_logger.debug("hit target lagunbfe: {} at: {}, {}, {} with lagunbfc: {} yaw, pitch {}, {}",
+                                        mu.last_applied_game_update_number_before_firing_entity_interpolation,
+                                        hit_position.GetX(), hit_position.GetY(), hit_position.GetZ(),
+                                        mu.last_applied_game_update_number_before_firing_camera_cpsr,
+                                        fps_camera.transform.get_rotation_yaw(),
                                         fps_camera.transform.get_rotation_pitch());
 
                     sphere_orbiter.set_travel_axis(random_unit_vector());
@@ -154,9 +247,11 @@ int main() {
                     sound_updates_this_tick.push_back(sound_update);
                 } else {
 
-                    global_logger.debug("missed target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
-                                        mu.last_applied_game_update_number, hit_position.GetX(), hit_position.GetY(),
-                                        hit_position.GetZ(), fps_camera.transform.get_rotation_yaw(),
+                    global_logger.debug("missed target lagunbf: {} at: {}, {}, {} with lagunbfc: {} yaw, pitch {}, {}",
+                                        mu.last_applied_game_update_number_before_firing_entity_interpolation,
+                                        hit_position.GetX(), hit_position.GetY(), hit_position.GetZ(),
+                                        mu.last_applied_game_update_number_before_firing_camera_cpsr,
+                                        fps_camera.transform.get_rotation_yaw(),
                                         fps_camera.transform.get_rotation_pitch());
 
                     SoundUpdate sound_update(SoundType::SERVER_MISS, 0, 0, 0);
@@ -164,6 +259,11 @@ int main() {
                 }
 
                 physics_target->RestoreState(current_physics_state);
+
+                if (subtick_firing_accuracy) {
+                    // restore back to original
+                    set_camera_state(current_crd, fps_camera);
+                }
             }
             last_processed_mouse_pos_update_number = mu.mouse_pos_update_number;
         }

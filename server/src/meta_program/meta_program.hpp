@@ -642,7 +642,19 @@ public:
               oss << "mouse_pos_update_number=" << conv(obj.mouse_pos_update_number); }
             oss << ", ";
             { auto conv = [](const unsigned int &v) { return std::to_string(v); };
-              oss << "last_applied_game_update_number=" << conv(obj.last_applied_game_update_number); }
+              oss << "last_applied_game_update_number_before_firing_entity_interpolation=" << conv(obj.last_applied_game_update_number_before_firing_entity_interpolation); }
+            oss << ", ";
+            { auto conv = [](const unsigned int &v) { return std::to_string(v); };
+              oss << "last_applied_game_update_number_before_firing_camera_cpsr=" << conv(obj.last_applied_game_update_number_before_firing_camera_cpsr); }
+            oss << ", ";
+            { auto conv = [](const double &v) { return std::to_string(v); };
+              oss << "subtick_percentage_when_fire_pressed=" << conv(obj.subtick_percentage_when_fire_pressed); }
+            oss << ", ";
+            { auto conv = [](const double &v) { return std::to_string(v); };
+              oss << "subtick_x_pos_before_firing=" << conv(obj.subtick_x_pos_before_firing); }
+            oss << ", ";
+            { auto conv = [](const double &v) { return std::to_string(v); };
+              oss << "subtick_y_pos_before_firing=" << conv(obj.subtick_y_pos_before_firing); }
             oss << ", ";
             { auto conv = [](const double &v) { return std::to_string(v); };
               oss << "x_pos=" << conv(obj.x_pos); }
@@ -677,7 +689,39 @@ public:
                 if (pos != std::string::npos) {
                     std::string value_str = token.substr(pos + 1);
                     auto conv = [](const std::string &s) { return static_cast<unsigned int>(std::stoul(s)); };
-                    obj.last_applied_game_update_number = conv(value_str);
+                    obj.last_applied_game_update_number_before_firing_entity_interpolation = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return static_cast<unsigned int>(std::stoul(s)); };
+                    obj.last_applied_game_update_number_before_firing_camera_cpsr = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return std::stod(s); };
+                    obj.subtick_percentage_when_fire_pressed = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return std::stod(s); };
+                    obj.subtick_x_pos_before_firing = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return std::stod(s); };
+                    obj.subtick_y_pos_before_firing = conv(value_str);
                 }
             }
             if (std::getline(iss, token, ',')) {
@@ -721,7 +765,19 @@ public:
               auto bytes = ser(obj.mouse_pos_update_number);
               buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
             { auto ser = [](const unsigned int &v) {   std::vector<uint8_t> buf(sizeof(unsigned int));   std::memcpy(buf.data(), &v, sizeof(unsigned int));   return buf; };
-              auto bytes = ser(obj.last_applied_game_update_number);
+              auto bytes = ser(obj.last_applied_game_update_number_before_firing_entity_interpolation);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const unsigned int &v) {   std::vector<uint8_t> buf(sizeof(unsigned int));   std::memcpy(buf.data(), &v, sizeof(unsigned int));   return buf; };
+              auto bytes = ser(obj.last_applied_game_update_number_before_firing_camera_cpsr);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
+              auto bytes = ser(obj.subtick_percentage_when_fire_pressed);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
+              auto bytes = ser(obj.subtick_x_pos_before_firing);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
+              auto bytes = ser(obj.subtick_y_pos_before_firing);
               buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
             { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
               auto bytes = ser(obj.x_pos);
@@ -743,7 +799,15 @@ public:
             { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
               total += size_fn(obj.mouse_pos_update_number); }
             { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
-              total += size_fn(obj.last_applied_game_update_number); }
+              total += size_fn(obj.last_applied_game_update_number_before_firing_entity_interpolation); }
+            { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
+              total += size_fn(obj.last_applied_game_update_number_before_firing_camera_cpsr); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_percentage_when_fire_pressed); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_x_pos_before_firing); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_y_pos_before_firing); }
             { auto size_fn = [](const double &v) { return sizeof(double); };
               total += size_fn(obj.x_pos); }
             { auto size_fn = [](const double &v) { return sizeof(double); };
@@ -768,10 +832,42 @@ public:
             }
             { auto deser = [](const std::vector<uint8_t> &buf) {   unsigned int v;   std::memcpy(&v, buf.data(), sizeof(unsigned int));   return v; };
               auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
-              size_t len = size_fn(obj.last_applied_game_update_number);
+              size_t len = size_fn(obj.last_applied_game_update_number_before_firing_entity_interpolation);
               if (offset + len > buffer.size()) return obj;
               std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
-              obj.last_applied_game_update_number = deser(slice);
+              obj.last_applied_game_update_number_before_firing_entity_interpolation = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   unsigned int v;   std::memcpy(&v, buf.data(), sizeof(unsigned int));   return v; };
+              auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
+              size_t len = size_fn(obj.last_applied_game_update_number_before_firing_camera_cpsr);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.last_applied_game_update_number_before_firing_camera_cpsr = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
+              auto size_fn = [](const double &v) { return sizeof(double); };
+              size_t len = size_fn(obj.subtick_percentage_when_fire_pressed);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.subtick_percentage_when_fire_pressed = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
+              auto size_fn = [](const double &v) { return sizeof(double); };
+              size_t len = size_fn(obj.subtick_x_pos_before_firing);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.subtick_x_pos_before_firing = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
+              auto size_fn = [](const double &v) { return sizeof(double); };
+              size_t len = size_fn(obj.subtick_y_pos_before_firing);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.subtick_y_pos_before_firing = deser(slice);
               offset += len;
             }
             { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
@@ -1197,7 +1293,19 @@ public:
               oss << "mouse_pos_update_number=" << conv(obj.mouse_pos_update_number); }
             oss << ", ";
             { auto conv = [](const unsigned int &v) { return std::to_string(v); };
-              oss << "last_applied_game_update_number=" << conv(obj.last_applied_game_update_number); }
+              oss << "last_applied_game_update_number_before_firing_entity_interpolation=" << conv(obj.last_applied_game_update_number_before_firing_entity_interpolation); }
+            oss << ", ";
+            { auto conv = [](const unsigned int &v) { return std::to_string(v); };
+              oss << "last_applied_game_update_number_before_firing_camera_cpsr=" << conv(obj.last_applied_game_update_number_before_firing_camera_cpsr); }
+            oss << ", ";
+            { auto conv = [](const double &v) { return std::to_string(v); };
+              oss << "subtick_percentage_when_fire_pressed=" << conv(obj.subtick_percentage_when_fire_pressed); }
+            oss << ", ";
+            { auto conv = [](const double &v) { return std::to_string(v); };
+              oss << "subtick_x_pos_before_firing=" << conv(obj.subtick_x_pos_before_firing); }
+            oss << ", ";
+            { auto conv = [](const double &v) { return std::to_string(v); };
+              oss << "subtick_y_pos_before_firing=" << conv(obj.subtick_y_pos_before_firing); }
             oss << ", ";
             { auto conv = [](const double &v) { return std::to_string(v); };
               oss << "x_pos=" << conv(obj.x_pos); }
@@ -1280,7 +1388,39 @@ public:
                 if (pos != std::string::npos) {
                     std::string value_str = token.substr(pos + 1);
                     auto conv = [](const std::string &s) { return static_cast<unsigned int>(std::stoul(s)); };
-                    obj.last_applied_game_update_number = conv(value_str);
+                    obj.last_applied_game_update_number_before_firing_entity_interpolation = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return static_cast<unsigned int>(std::stoul(s)); };
+                    obj.last_applied_game_update_number_before_firing_camera_cpsr = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return std::stod(s); };
+                    obj.subtick_percentage_when_fire_pressed = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return std::stod(s); };
+                    obj.subtick_x_pos_before_firing = conv(value_str);
+                }
+            }
+            if (std::getline(iss, token, ',')) {
+                auto pos = token.find('=');
+                if (pos != std::string::npos) {
+                    std::string value_str = token.substr(pos + 1);
+                    auto conv = [](const std::string &s) { return std::stod(s); };
+                    obj.subtick_y_pos_before_firing = conv(value_str);
                 }
             }
             if (std::getline(iss, token, ',')) {
@@ -1348,7 +1488,19 @@ public:
               auto bytes = ser(obj.mouse_pos_update_number);
               buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
             { auto ser = [](const unsigned int &v) {   std::vector<uint8_t> buf(sizeof(unsigned int));   std::memcpy(buf.data(), &v, sizeof(unsigned int));   return buf; };
-              auto bytes = ser(obj.last_applied_game_update_number);
+              auto bytes = ser(obj.last_applied_game_update_number_before_firing_entity_interpolation);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const unsigned int &v) {   std::vector<uint8_t> buf(sizeof(unsigned int));   std::memcpy(buf.data(), &v, sizeof(unsigned int));   return buf; };
+              auto bytes = ser(obj.last_applied_game_update_number_before_firing_camera_cpsr);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
+              auto bytes = ser(obj.subtick_percentage_when_fire_pressed);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
+              auto bytes = ser(obj.subtick_x_pos_before_firing);
+              buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
+            { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
+              auto bytes = ser(obj.subtick_y_pos_before_firing);
               buffer.insert(buffer.end(), bytes.begin(), bytes.end()); }
             { auto ser = [](const double &v) {   std::vector<uint8_t> buf(sizeof(double));   std::memcpy(buf.data(), &v, sizeof(double));   return buf; };
               auto bytes = ser(obj.x_pos);
@@ -1387,7 +1539,15 @@ public:
             { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
               total += size_fn(obj.mouse_pos_update_number); }
             { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
-              total += size_fn(obj.last_applied_game_update_number); }
+              total += size_fn(obj.last_applied_game_update_number_before_firing_entity_interpolation); }
+            { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
+              total += size_fn(obj.last_applied_game_update_number_before_firing_camera_cpsr); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_percentage_when_fire_pressed); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_x_pos_before_firing); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_y_pos_before_firing); }
             { auto size_fn = [](const double &v) { return sizeof(double); };
               total += size_fn(obj.x_pos); }
             { auto size_fn = [](const double &v) { return sizeof(double); };
@@ -1462,10 +1622,42 @@ public:
             }
             { auto deser = [](const std::vector<uint8_t> &buf) {   unsigned int v;   std::memcpy(&v, buf.data(), sizeof(unsigned int));   return v; };
               auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
-              size_t len = size_fn(obj.last_applied_game_update_number);
+              size_t len = size_fn(obj.last_applied_game_update_number_before_firing_entity_interpolation);
               if (offset + len > buffer.size()) return obj;
               std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
-              obj.last_applied_game_update_number = deser(slice);
+              obj.last_applied_game_update_number_before_firing_entity_interpolation = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   unsigned int v;   std::memcpy(&v, buf.data(), sizeof(unsigned int));   return v; };
+              auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
+              size_t len = size_fn(obj.last_applied_game_update_number_before_firing_camera_cpsr);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.last_applied_game_update_number_before_firing_camera_cpsr = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
+              auto size_fn = [](const double &v) { return sizeof(double); };
+              size_t len = size_fn(obj.subtick_percentage_when_fire_pressed);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.subtick_percentage_when_fire_pressed = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
+              auto size_fn = [](const double &v) { return sizeof(double); };
+              size_t len = size_fn(obj.subtick_x_pos_before_firing);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.subtick_x_pos_before_firing = deser(slice);
+              offset += len;
+            }
+            { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
+              auto size_fn = [](const double &v) { return sizeof(double); };
+              size_t len = size_fn(obj.subtick_y_pos_before_firing);
+              if (offset + len > buffer.size()) return obj;
+              std::vector<uint8_t> slice(buffer.begin() + offset, buffer.begin() + offset + len);
+              obj.subtick_y_pos_before_firing = deser(slice);
               offset += len;
             }
             { auto deser = [](const std::vector<uint8_t> &buf) {   double v;   std::memcpy(&v, buf.data(), sizeof(double));   return v; };
@@ -1507,7 +1699,15 @@ public:
             { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
               total += size_fn(obj.mouse_pos_update_number); }
             { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
-              total += size_fn(obj.last_applied_game_update_number); }
+              total += size_fn(obj.last_applied_game_update_number_before_firing_entity_interpolation); }
+            { auto size_fn = [](const unsigned int &v) { return sizeof(unsigned int); };
+              total += size_fn(obj.last_applied_game_update_number_before_firing_camera_cpsr); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_percentage_when_fire_pressed); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_x_pos_before_firing); }
+            { auto size_fn = [](const double &v) { return sizeof(double); };
+              total += size_fn(obj.subtick_y_pos_before_firing); }
             { auto size_fn = [](const double &v) { return sizeof(double); };
               total += size_fn(obj.x_pos); }
             { auto size_fn = [](const double &v) { return sizeof(double); };

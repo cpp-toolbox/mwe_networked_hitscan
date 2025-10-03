@@ -147,22 +147,27 @@ class Hud3D {
 };
 
 void firing_logic(bool fire_just_pressed, ToolboxEngine &tbx_engine, JPH::Ref<JPH::CharacterVirtual> physics_target,
-                  unsigned int last_received_game_update_number) {
+                  unsigned int last_received_game_update_number_before_firing_entity,
+                  unsigned int last_received_game_update_number_before_firing_camera) {
     if (fire_just_pressed) {
         LogSection _(global_logger, "firing logic");
         bool had_hit = run_hitscan_logic(tbx_engine.fps_camera, physics_target);
         auto hit_position = physics_target->GetPosition();
 
         if (had_hit) {
-            global_logger.info("hit target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}",
-                               last_received_game_update_number, hit_position.GetX(), hit_position.GetY(),
-                               hit_position.GetZ(), tbx_engine.fps_camera.transform.get_rotation_yaw(),
+            global_logger.info("hit target lagunbfe: {} at: {}, {}, {} with lagunbfc: {} yaw, pitch {}, {}",
+                               last_received_game_update_number_before_firing_entity, hit_position.GetX(),
+                               hit_position.GetY(), hit_position.GetZ(),
+                               last_received_game_update_number_before_firing_camera,
+                               tbx_engine.fps_camera.transform.get_rotation_yaw(),
                                tbx_engine.fps_camera.transform.get_rotation_pitch());
             tbx_engine.sound_system.queue_sound(SoundType::CLIENT_HIT);
         } else {
-            global_logger.info("missed target lagun: {} at: {}, {}, {} with yaw, pitch {}, {}\n",
-                               last_received_game_update_number, hit_position.GetX(), hit_position.GetY(),
-                               hit_position.GetZ(), tbx_engine.fps_camera.transform.get_rotation_yaw(),
+            global_logger.info("missed target lagunbfe: {} at: {}, {}, {} with lagunbfc: {} yaw, pitch {}, {}\n",
+                               last_received_game_update_number_before_firing_entity, hit_position.GetX(),
+                               hit_position.GetY(), hit_position.GetZ(),
+                               last_received_game_update_number_before_firing_camera,
+                               tbx_engine.fps_camera.transform.get_rotation_yaw(),
                                tbx_engine.fps_camera.transform.get_rotation_pitch());
             tbx_engine.sound_system.queue_sound(SoundType::CLIENT_MISS);
         }
@@ -246,9 +251,19 @@ int main() {
         double y_pos;
     };
 
-    unsigned int last_applied_game_update_number = 0;
     std::vector<LabelledMousePos> mouse_pos_history;
     std::vector<GameUpdate> recent_game_updates_for_entity_interpolation;
+
+    // NOTE: the value of this is different depending on if entity_interoplation is on, when it's on this is delayed by
+    // one or two due to us requiring two game updates to do entity interpolation
+    unsigned int last_applied_game_update_number_before_firing_entity_interpolation = 0;
+    unsigned int last_applied_game_update_number_before_firing_camera_cpsr = 0;
+
+    // NOTE: the reason we need this second pair of vars is that these ones will update all the time whenever we receive
+    // new updates and so if we only had the above variables then by the time we want to send out their value, their
+    // value will have changed which is not what we want
+    unsigned int last_applied_game_update_number_entity_interpolation = 0;
+    unsigned int last_applied_game_update_number_camera_cpsr = 0;
 
     Stopwatch game_update_received;
 
@@ -262,8 +277,6 @@ int main() {
         global_logger.info("just received game update packet: {}", mp.GameUpdatePacket_to_string(packet));
         game_update_received.press();
 
-        last_applied_game_update_number = just_received_game_update.update_number;
-
         global_logger.debug("just received game update, receiving at rate {}", game_update_received.average_frequency);
         global_logger.debug("last processed mouse update: {}",
                             just_received_game_update.last_processed_mouse_pos_update_number);
@@ -273,6 +286,8 @@ int main() {
 
         tbx_engine.fps_camera.transform.set_rotation_pitch(just_received_game_update.pitch);
         tbx_engine.fps_camera.transform.set_rotation_yaw(just_received_game_update.yaw);
+
+        last_applied_game_update_number_camera_cpsr = just_received_game_update.update_number;
 
         global_logger.debug("setting camera angle based on what server says | yaw: {} pitch: {} ",
                             tbx_engine.fps_camera.transform.get_rotation_yaw(),
@@ -286,6 +301,8 @@ int main() {
             // NOTE: when not using entity interpolation we just slap the entities position right in
             physics_target->SetPosition(g2j(new_target_pos));
             target.transform.set_translation(new_target_pos);
+
+            last_applied_game_update_number_entity_interpolation = just_received_game_update.update_number;
 
             global_logger.debug("just updated the targets position to: {}", vec3_to_string(new_target_pos));
         } else {
@@ -369,6 +386,7 @@ int main() {
 
     PeriodicSignal send_mouse_updates_signal(60);
 
+    // NOTE: the phase will not be aligned but the rate will be the same.
     PeriodicSignal mock_server_send_signal(60);
 
     // room [[
@@ -404,10 +422,17 @@ int main() {
                                         glm::vec2(tbx_engine.window.height_px / (float)tbx_engine.window.width_px, 1));
 
     TemporalBinarySignal fire_pressed_per_send_tbs;
+
+    // NOTE: these varaibles are to do with non subtick firing, when the user fires the weapon we have to store that
+    // information until next time we send out a keyboard mouse update that way the client and server will fire on the
+    // same game state making the results the same on both client and server.
     bool fire_pressed_since_last_send = false;
     bool fire_pressed_since_last_send_prev = false;
+    double subtick_percent_that_fire_occurred_at = 0;
+    double subtick_x_pos_before_firing = 0;
+    double subtick_y_pos_before_firing = 0;
 
-    bool use_subtick_firing = false;
+    bool use_subtick_firing = true;
 
     std::function<void(double)> tick = [&](double dt) {
         LogSection _(global_logger, "tick");
@@ -418,6 +443,7 @@ int main() {
 
             LogSection _(global_logger, "sending mouse updates");
 
+            // NOTE: on the server we will do the same logic so that firing occurs on the same tick
             bool fire_just_pressed_since_last_send =
                 fire_pressed_since_last_send and not fire_pressed_since_last_send_prev;
 
@@ -430,11 +456,15 @@ int main() {
             // }
             //
 
+            // NOTE: if we don't use subtick firing, it means that firing can only occur at specific times, by placing
+            // the logic here we only allow firing to occur on mouse udpates that get sent to the server, the reasonging
+            // is that it will make sure that weapon firing will not occur on a mouse update that is not sent to the
+            // server, and thus the client and server will always fire on the same tick, this is important.
             if (not use_subtick_firing) {
-                // we only allow firing here so you can't fire on subtick which can cause descrepancies between hits on
-                // client and server
+                // TODO: I think the usage of before firing vars here is wrong think later when i need again
                 firing_logic(fire_just_pressed_since_last_send, tbx_engine, physics_target,
-                             last_applied_game_update_number);
+                             last_applied_game_update_number_before_firing_entity_interpolation,
+                             last_applied_game_update_number_before_firing_camera_cpsr);
             }
 
             if (not mouse_pos_history.empty()) {
@@ -445,8 +475,11 @@ int main() {
 
                 global_logger.debug("sending out mouse pos [{}]: ({}, {})", last_mouse_pos.mouse_pos_update_number,
                                     last_mouse_pos.x_pos, last_mouse_pos.y_pos);
-                MouseUpdate mu(last_mouse_pos.mouse_pos_update_number, last_applied_game_update_number,
-                               last_mouse_pos.x_pos, last_mouse_pos.y_pos,
+                MouseUpdate mu(last_mouse_pos.mouse_pos_update_number,
+                               last_applied_game_update_number_before_firing_entity_interpolation,
+                               last_applied_game_update_number_before_firing_camera_cpsr,
+                               subtick_percent_that_fire_occurred_at, subtick_x_pos_before_firing,
+                               subtick_y_pos_before_firing, last_mouse_pos.x_pos, last_mouse_pos.y_pos,
                                fire_pressed_since_last_send, // NOTE: we use this instead of sampling the keyboard now.
                                tbx_engine.fps_camera.active_sensitivity);
 
@@ -494,12 +527,7 @@ int main() {
             //                                                          tbx_engine.configuration, dt);
         }
 
-        if (use_subtick_firing) {
-            // we only allow firing here so you can't fire on subtick which can cause descrepancies between hits on
-            // client and server
-            firing_logic(tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON), tbx_engine, physics_target,
-                         last_applied_game_update_number);
-        }
+        auto percentage_through_cycle = mock_server_send_signal.get_cycle_progress();
 
         if (entity_interpolation) {
             if (recent_game_updates_for_entity_interpolation.size() >= 2) {
@@ -520,7 +548,6 @@ int main() {
                     start_game_update.update_number, vec3_to_string(start_position, 3), end_game_update.update_number,
                     vec3_to_string(end_position, 3));
 
-                auto percentage_through_cycle = mock_server_send_signal.get_cycle_progress();
                 float t = percentage_through_cycle;
 
                 global_logger.debug("interpolation percent: {}", t);
@@ -532,6 +559,8 @@ int main() {
                 physics_target->SetPosition(g2j(interpolated_position));
                 target.transform.set_translation(interpolated_position);
 
+                last_applied_game_update_number_entity_interpolation = start_game_update.update_number;
+
                 if (mock_server_send_signal.process_and_get_signal()) {
                     global_logger.debug("mock server send signal activated");
                     recent_game_updates_for_entity_interpolation.erase(
@@ -542,8 +571,33 @@ int main() {
             }
         }
 
+        auto fire_before = fire_pressed_since_last_send;
+
         fire_pressed_since_last_send =
-            fire_pressed_since_last_send or tbx_engine.input_state.is_pressed(EKey::LEFT_MOUSE_BUTTON);
+            fire_pressed_since_last_send or tbx_engine.input_state.is_just_pressed(EKey::LEFT_MOUSE_BUTTON);
+
+        auto fire_after = fire_pressed_since_last_send;
+
+        // NOTE: if you fire multiple times in a subtick, then only the first fire is used based on the above code.
+        bool fire_just_occurred = not fire_before and fire_after;
+
+        // NOTE: here we are outside of any rate limiting if statements and so this logic is run at however fast we can
+        // pump out frames aka subtick accuracy
+        if (use_subtick_firing) {
+
+            if (fire_just_occurred) {
+                last_applied_game_update_number_before_firing_entity_interpolation =
+                    last_applied_game_update_number_entity_interpolation;
+                last_applied_game_update_number_before_firing_camera_cpsr = last_applied_game_update_number_camera_cpsr;
+                subtick_percent_that_fire_occurred_at = percentage_through_cycle;
+                subtick_x_pos_before_firing = tbx_engine.fps_camera.mouse.last_mouse_position_x;
+                subtick_y_pos_before_firing = tbx_engine.fps_camera.mouse.last_mouse_position_y;
+            }
+
+            firing_logic(fire_just_occurred, tbx_engine, physics_target,
+                         last_applied_game_update_number_before_firing_entity_interpolation,
+                         last_applied_game_update_number_before_firing_camera_cpsr);
+        }
 
         if (fire_pressed_since_last_send)
             global_logger.debug("after processing ");
